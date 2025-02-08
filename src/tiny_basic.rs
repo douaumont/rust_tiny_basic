@@ -88,14 +88,18 @@ impl TryFrom<&str> for Line {
 #[derive(Debug)]
 pub enum Error {
     InvalidLineNumber,
-    UnrecognisedKeyword(String)
+    UnrecognisedKeyword(String),
+    UnmatchedQuote,
+    Expected(char)
 }
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Error::InvalidLineNumber => write!(f, "Line numbers should be in range [{}; {}]", MIN_LINE_NUMBER, MAX_LINE_NUMBER),
-            Error::UnrecognisedKeyword(s) => write!(f, "Unrecognised keyword: {}", s)
+            Error::UnrecognisedKeyword(s) => write!(f, "Unrecognised keyword: {}", s),
+            Error::UnmatchedQuote => todo!(),
+            Error::Expected(_) => todo!(),
         }
     }
 }
@@ -126,6 +130,7 @@ impl Interpreter {
 
     fn run_line(&mut self, line: &str) -> Result<(), Error> {
         let mut line_chars = line.chars().enumerate();
+
         let keyword = loop {
             match line_chars.next() {
                 Some((i, c)) => {
@@ -137,9 +142,11 @@ impl Interpreter {
             }
         };
 
+        let remainder = line[keyword.len()..line.len()].trim();
+
         match keyword {
             "PRINT" => {
-                
+                self.print(remainder)?;
             },
             "LIST" => {
                 for line in self.lines.iter() {
@@ -152,6 +159,52 @@ impl Interpreter {
         }
 
         Ok(())
+    }
+
+    fn print(&self, expr_list: &str) -> Result<(), Error> {
+        let string = Self::get_string(expr_list)?.unwrap();
+        println!("{}", string);
+        let expr_list = Self::consume_chars(expr_list, string.len()).trim();
+
+        if expr_list.is_empty() {
+            return Ok(());
+        }
+
+        loop {
+            let expr_list = Self::consume_char(expr_list, ',')?.trim();
+            let string = Self::get_string(expr_list)?.unwrap();
+            println!("{}", string);
+            let expr_list = Self::consume_chars(expr_list, string.len()).trim();
+
+            if expr_list.is_empty() {
+                return Ok(());
+            }
+        }
+    }
+
+    fn get_string(expr_list: &str) -> Result<Option<&str>, Error> {
+        if expr_list.starts_with('"') {
+            let str_end = expr_list[1..expr_list.len()].find('"');
+            match str_end {
+                Some(str_end) => Ok(Some(&expr_list[0..=(str_end + 1)])),
+                None => Err(Error::UnmatchedQuote)
+            }
+            
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn consume_chars(s: &str, char_count_to_consume: usize) -> &str {
+        &s[char_count_to_consume..s.len()]
+    }
+
+    fn consume_char(s: &str, char_to_consume: char) -> Result<&str, Error> {
+        let found_char_pos = s.find(char_to_consume);
+        match found_char_pos {
+            Some(pos) => Ok(&s[(pos + 1)..s.len()]),
+            None => Err(Error::Expected(char_to_consume))
+        }
     }
 }
 

@@ -31,6 +31,11 @@ fn main() -> ExitCode {
                 if bytes_read == 0 {
                     return ExitCode::SUCCESS;
                 }
+                if !line.chars().all(|c |c.is_ascii()) {
+                    eprintln!("All characters should be ASCII-only");
+                    continue;
+                }
+                
                 interpreter.execute(line.trim());
             },
             Err(kind) => {
