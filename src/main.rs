@@ -21,7 +21,7 @@ mod tiny_basic;
 use std::{io::{stdin, stdout, Write}, process::ExitCode};
 
 fn main() -> ExitCode {
-    let mut interpreter = tiny_basic::Interpreter::new();
+    let mut interpreter = tiny_basic::interpreter::Interpreter::new();
     loop {
         let mut line = String::new();
         print!("tiny_basic> ");
