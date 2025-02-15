@@ -19,18 +19,34 @@
 use crate::tiny_basic::code_line::{MIN_LINE_NUMBER, MAX_LINE_NUMBER};
 
 #[derive(Debug)]
-pub enum Error<'a> {
+pub enum Error {
     InvalidLineNumber,
-    UnrecognisedKeyword(&'a str),
-    Expected(char)
+    UnrecognisedKeyword,
+    Expected(char),
+    ExpectedKeyword,
+    ExpectedStringOrExpression,
+    UnexpectedOperator,
+    NumberCouldNotBeParsed,
+    FactorCouldNotBeParsed
 }
 
-impl<'a> std::fmt::Display for Error<'a> {
+impl From<std::num::ParseIntError> for Error {
+    fn from(value: std::num::ParseIntError) -> Self {
+        Self::NumberCouldNotBeParsed
+    }
+}
+
+impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Error::InvalidLineNumber => write!(f, "Line numbers should be in range [{}; {}]", MIN_LINE_NUMBER, MAX_LINE_NUMBER),
-            Error::UnrecognisedKeyword(s) => write!(f, "Unrecognised keyword: {}", s),
-            Error::Expected(c) => write!(f, "Expected '{}'", c)
+            Error::UnrecognisedKeyword => todo!(),
+            Error::Expected(c) => write!(f, "Expected '{}'", c),
+            Error::ExpectedKeyword => todo!(),
+            Error::ExpectedStringOrExpression => todo!(),
+            Error::UnexpectedOperator => todo!(),
+            Error::NumberCouldNotBeParsed => todo!(),
+            Error::FactorCouldNotBeParsed => todo!(),
         }
     }
 }

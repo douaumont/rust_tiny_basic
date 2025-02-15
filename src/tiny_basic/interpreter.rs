@@ -16,18 +16,20 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-use crate::tiny_basic::error::Error as TinyBasicError;
+use ascii::{AsciiChar, AsciiStr};
+
+use crate::tiny_basic::result;
 use crate::tiny_basic::code_line::parse_line;
+use crate::tiny_basic::types;
+use crate::tiny_basic::error::Error as TinyBasicError;
 
 use std::collections::{BTreeMap, HashMap};
 
-use super::code_line::{CharStream, LineNumber};
-use super::error;
-use super::types::{self, Number};
+use crate::tiny_basic::char_stream::AsciiCharStream; 
+use crate::tiny_basic::code_line::LineNumber;
 
 const ACCEPTABLE_VAR_NAMES: [char; 26] = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'];
 const DIGITS: [char; 10] = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
-
 
 pub struct Interpreter {
     lines: BTreeMap<LineNumber, String>,
@@ -42,7 +44,7 @@ impl Interpreter {
         }
     }
 
-    pub fn execute<'a>(&mut self, line: &'a str) -> Result<(), TinyBasicError::<'a>> {
+    pub fn execute<'a>(&mut self, line: &'a str) -> result::Result<()> {
         assert!(!line.starts_with(' ') && !line.ends_with(' '));
 
         let parsed_line = parse_line(line)?;
@@ -66,82 +68,112 @@ impl Interpreter {
         self.lines.remove(&line_number);
     }
 
-    fn run_line<'a>(&mut self, line: &'a str) -> Result<(), TinyBasicError::<'a>> {
-        let mut line = CharStream::from_str(line);
+    fn run_line<'a>(&mut self, line: &'a str) -> result::Result<()> {
+        let line = AsciiStr::from_ascii(line.as_bytes())
+        .expect("Expected line to be ASCII");
+        let mut line = AsciiCharStream::from_ascii_str(line);
 
-        Ok(())
-    }
+        let keyword = line.consume_keyword().ok_or(TinyBasicError::ExpectedKeyword)?.as_str();
 
-    fn print<'a>(&self, expr_list: &mut CharStream) -> Result<(), TinyBasicError::<'a>> {
-        Ok(())
-    }
-
-    fn string<'a>(expr_list: &mut CharStream) -> Result<&'a str, TinyBasicError<'a>> {
-        Ok("")
-    }
-
-    fn get_string(expr_list: &str) -> Result<Option<&str>, TinyBasicError> {
-        if expr_list.starts_with('"') {
-            let str_end = expr_list[1..expr_list.len()].find('"');
-            match str_end {
-                Some(str_end) => Ok(Some(&expr_list[0..=(str_end + 1)])),
-                None => Err(TinyBasicError::Expected('"'))
-            }
-            
-        } else {
-            Ok(None)
+        match keyword {
+            "PRINT" => {
+                self.print(&mut line)
+            },
+            _ => Err(TinyBasicError::UnrecognisedKeyword)
         }
     }
 
-    fn expression(&self, line: &mut CharStream) -> types::Number {
-        let sign: types::Number = match line.try_consume_char(&['+', '-']) {
-            Some('+') | None => 1,
-            Some('-') => -1,
-            Some(_) => panic!()
+    fn print<'a>(&self, expr_list: &mut AsciiCharStream) -> result::Result<()> {
+        if let Some(string) = expr_list.consume_string() {
+            print!("{} ", string);
+        } else {
+            let expr_value = self.expression(expr_list)?;
+            print!("{} ", expr_value);
+        }
+
+        while expr_list.consume_char(ascii::AsciiChar::Comma).is_some() {
+            if let Some(string) = expr_list.consume_string() {
+                print!("{} ", string);
+            } else {
+                let expr_value = self.expression(expr_list)?;
+                print!("{} ", expr_value);
+            }
+        }
+
+        println!();
+
+        Ok(())
+    }
+
+    fn expression(&self, line: &mut AsciiCharStream) -> result::Result<types::Number> {
+        let sign = line.consume_char_if(is_plus_or_minus);
+        let sign: types::Number = match sign {
+            Some(sign) => {
+                get_sign_value(sign)
+            },
+            None => 1,
         };
         
-        self.term(line)
+        let mut total_term = sign * self.term(line)?;
+        while let Some(sign) = line.consume_char_if(is_plus_or_minus) {
+            let sign = get_sign_value(sign);
+            let other = self.term(line)?;
+            total_term += sign * other;
+        }
+        Ok(total_term)
     }
 
-    fn term(&self, line: &mut CharStream) -> types::Number {
-        self.factor(line)
+    fn term(&self, line: &mut AsciiCharStream) -> result::Result<types::Number> {
+        let mut total_factor = self.factor(line)?;
+        if let Some(op) = line.consume_char_if(is_slash_or_asterisk) {
+            let other = self.factor(line)?;
+            match op {
+                ascii::AsciiChar::Slash => total_factor /= other,
+                ascii::AsciiChar::Asterisk => total_factor *= other,
+                _ => return Err(TinyBasicError::UnexpectedOperator),
+            }
+        }
+        Ok(total_factor)
     }
 
-    fn factor(&self, line: &mut CharStream) -> types::Number {
-        if let Some(var) = line.try_consume_char(&ACCEPTABLE_VAR_NAMES) {
-            *self.environment.get(&var).unwrap()
-        } else if let Some(first_digit) = line.try_consume_char(&DIGITS) {
-            Self::number(first_digit, line)
-        } else if let Some(_bracket) = line.try_consume_char(&['(']) {
-            let res = self.expression(line);
-            line.try_consume_char(&[')']).ok_or(error::Error::Expected(')')).unwrap();
-            res
+    fn factor(&self, line: &mut AsciiCharStream) -> result::Result<types::Number>  {
+        if let Some(var_name) = line.consume_var() {
+            todo!("Variables will be implemented later");
+        } else if let Some(number) = line.consume_number() {
+            let number: types::Number = number.as_str().parse()?;
+            Ok(number)
+        } else if line.consume_char(AsciiChar::ParenOpen).is_some() {
+            let expr_value = self.expression(line)?;
+            line
+                .consume_char(AsciiChar::ParenClose)
+                .ok_or(TinyBasicError::Expected(')'))?;
+            Ok(expr_value)
         } else {
-            panic!();
+            Err(TinyBasicError::FactorCouldNotBeParsed)
         }
     }
+}
 
-    fn number(first_digit: char, line: &mut CharStream) -> types::Number {
-        let mut number = first_digit
-            .to_digit(10)
-            .unwrap() as types::Number;
-        while let Some(digit) = line.try_consume_char(&DIGITS) {
-            number *= 10;
-            number += digit.to_digit(10).unwrap() as types::Number;
-        }
-        number
+fn is_plus_or_minus(ch: &AsciiChar) -> bool {
+    match *ch {
+        ascii::AsciiChar::Plus | ascii::AsciiChar::Minus => true,
+        _ => false
     }
+}
 
-    fn consume_chars(s: &str, char_count_to_consume: usize) -> &str {
-        &s[char_count_to_consume..s.len()]
+fn is_slash_or_asterisk(ch: &AsciiChar) -> bool {
+    match *ch {
+        ascii::AsciiChar::Slash | ascii::AsciiChar::Asterisk => true,
+        _ => false
     }
+}
 
-    fn consume_char(s: &str, char_to_consume: char) -> Result<&str, TinyBasicError> {
-        let found_char_pos = s.find(char_to_consume);
-        match found_char_pos {
-            Some(pos) => Ok(&s[(pos + 1)..s.len()]),
-            None => Err(TinyBasicError::Expected(char_to_consume))
-        }
+fn get_sign_value(ch: AsciiChar) -> types::Number {
+    assert!(is_plus_or_minus(&ch));
+    match ch {
+        ascii::AsciiChar::Plus => 1,
+        ascii::AsciiChar::Minus => -1,
+        _ => unreachable!()
     }
 }
 

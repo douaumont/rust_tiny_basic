@@ -36,7 +36,12 @@ fn main() -> ExitCode {
                     continue;
                 }
                 
-                interpreter.execute(line.trim());
+                match interpreter.execute(line.trim()) {
+                    Ok(_) => (),
+                    Err(error) => {
+                        eprintln!("{:?}", error);
+                    },
+                }
             },
             Err(kind) => {
                 eprintln!("{}", kind);

@@ -19,4 +19,6 @@
 mod code_line;
 mod error;
 mod types;
+mod char_stream;
+pub mod result;
 pub mod interpreter;
