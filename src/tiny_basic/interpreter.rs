@@ -16,6 +16,10 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+
+use std::collections::{BTreeMap, HashMap};
+use std::cell::Cell;
+
 use ascii::{AsciiChar, AsciiStr};
 
 use crate::tiny_basic::result;
@@ -23,7 +27,6 @@ use crate::tiny_basic::code_line::parse_line;
 use crate::tiny_basic::types;
 use crate::tiny_basic::error::Error as TinyBasicError;
 
-use std::collections::{BTreeMap, HashMap};
 
 use crate::tiny_basic::char_stream::AsciiCharStream; 
 use crate::tiny_basic::code_line::LineNumber;
@@ -34,14 +37,14 @@ const ACCEPTABLE_VAR_NAMES: [char; 26] = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'
 const DIGITS: [char; 10] = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
 
 pub struct Interpreter {
-    lines: BTreeMap<LineNumber, String>,
+    lines: Cell<BTreeMap<LineNumber, String>>,
     environment: HashMap<char, types::Number>
 }
 
 impl Interpreter {
     pub fn new() -> Self {
         Interpreter {
-            lines: BTreeMap::new(),
+            lines: Cell::new(BTreeMap::new()),
             environment: HashMap::new()
         }
     }
@@ -57,7 +60,7 @@ impl Interpreter {
                 if parsed_line.1.is_empty() {
                     self.erase_line(i);
                 } else {
-                    self.lines.insert(i, parsed_line.1.to_string());
+                    self.lines.get_mut().insert(i, parsed_line.1.to_string());
                 }
             },
             None => self.run_line(line)?
@@ -67,7 +70,7 @@ impl Interpreter {
     }
 
     fn erase_line(&mut self, line_number: LineNumber) {
-        self.lines.remove(&line_number);
+        self.lines.get_mut().remove(&line_number);
     }
 
     fn run_line<'a>(&mut self, line: &'a str) -> result::Result<()> {
@@ -83,21 +86,20 @@ impl Interpreter {
         }
     }
 
-    fn statement(&self, statement: &mut AsciiCharStream) -> result::Result<()> {
+    fn statement(&mut self, statement: &mut AsciiCharStream) -> result::Result<()> {
         let keyword = statement.consume_keyword().ok_or(TinyBasicError::ExpectedKeyword)?;
 
         match keyword {
-            Keyword::Print => {
-                self.print_stmt(statement)
-            },
-            Keyword::If => {
-                self.if_stmt(statement)
-            },
+            Keyword::Print => self.print_stmt(statement),
+            Keyword::If => self.if_stmt(statement),
+            Keyword::Run => self.run_stmt(),
+            Keyword::List => self.list_stmt(),
+            Keyword::Clear => self.clear_stmt(),
             _ => Err(TinyBasicError::UnexpectedKeyword)
         }
     }
 
-    fn print_stmt<'a>(&self, expr_list: &mut AsciiCharStream) -> result::Result<()> {
+    fn print_stmt<'a>(&mut self, expr_list: &mut AsciiCharStream) -> result::Result<()> {
         if let Some(string) = expr_list.consume_string() {
             print!("{} ", string);
         } else {
@@ -119,7 +121,7 @@ impl Interpreter {
         Ok(())
     }
 
-    fn if_stmt(&self, line: &mut AsciiCharStream) -> result::Result<()> {
+    fn if_stmt(&mut self, line: &mut AsciiCharStream) -> result::Result<()> {
         let lhs = self.expression(line)?;
         let relop = line
             .consume_relop()
@@ -147,6 +149,40 @@ impl Interpreter {
                 .ok_or(TinyBasicError::ExpectedKeyword)?;
             self.statement(line)?;
         }
+        Ok(())
+    }
+
+    fn run_stmt(&mut self) -> result::Result<()> {
+        // Move lines into local variable to satisfy borrow checker
+        let lines = self.lines.take();
+        let mut res: result::Result<_> = Ok(());
+        
+        for (i, line) in lines.iter() {
+            match self.run_line(line) {
+                Ok(_) => continue,
+                Err(error) => {
+                    res = Err(error);
+                    break;
+                },
+            }
+        }
+        
+        self.lines.set(lines);
+
+        res
+    }
+
+    fn list_stmt(&self) -> result::Result<()> {
+        let lines = self.lines.take();
+        for (i, line) in lines.iter() {
+            println!("{} {}", i, line);
+        }
+        self.lines.set(lines);
+        Ok(())
+    }
+
+    fn clear_stmt(&mut self) -> result::Result<()> {
+        self.lines.get_mut().clear();
         Ok(())
     }
 

@@ -23,7 +23,10 @@ use ascii::{AsAsciiStr, AsciiChar, AsciiStr};
 pub enum Keyword {
     Print,
     If,
-    Then
+    Then,
+    Run,
+    List,
+    Clear
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -126,6 +129,9 @@ impl<'a> AsciiCharStream<'a> {
                 "PRINT" => Some(Keyword::Print),
                 "IF" => Some(Keyword::If),
                 "THEN" => Some(Keyword::Then),
+                "RUN" => Some(Keyword::Run),
+                "LIST" => Some(Keyword::List),
+                "CLEAR" => Some(Keyword::Clear),
                 _ => None
             }
         }

@@ -16,8 +16,6 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-use std::{iter::Peekable, str::Chars};
-
 use crate::tiny_basic::error::Error as TinyBasicError;
 
 pub type LineNumber = i32;
