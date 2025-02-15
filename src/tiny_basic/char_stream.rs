@@ -1,4 +1,41 @@
+/*
+    Tiny BASIC interpreter written in Rust
+    Copyright (C) 2025 Artyom Makarov
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+*/
+
+
 use ascii::{AsAsciiStr, AsciiChar, AsciiStr};
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Keyword {
+    Print,
+    If,
+    Then
+}
+
+#[derive(Debug, PartialEq, Eq)]
+
+pub enum RelationalOperator {
+    Less,
+    Greater,
+    LessEqual,
+    GreaterEqual,
+    NotEqual,
+    Equal
+}
 
 #[derive(Default, Clone, PartialEq)]
 struct StreamState {
@@ -76,7 +113,7 @@ impl<'a> AsciiCharStream<'a> {
         }
     }
 
-    pub fn consume_keyword(&mut self) -> Option<&AsciiStr> {
+    pub fn consume_keyword(&mut self) -> Option<Keyword> {
         let mut keyword_end = self.clone();
         keyword_end.advance_while(AsciiChar::is_ascii_alphabetic);
         if keyword_end.state == self.state {
@@ -85,7 +122,12 @@ impl<'a> AsciiCharStream<'a> {
             let keyword = &self.stream[self.state.cur..keyword_end.state.cur];
             *self = keyword_end.clone();
             self.trim_start();
-            Some(keyword)
+            match keyword.as_str() {
+                "PRINT" => Some(Keyword::Print),
+                "IF" => Some(Keyword::If),
+                "THEN" => Some(Keyword::Then),
+                _ => None
+            }
         }
     }
 
@@ -120,6 +162,30 @@ impl<'a> AsciiCharStream<'a> {
         }
     }
 
+    pub fn consume_relop(&mut self) -> Option<RelationalOperator> {
+        if self.consume_char(AsciiChar::LessThan).is_some() {
+            if self.consume_char(AsciiChar::Equal).is_some() {
+                Some(RelationalOperator::LessEqual)
+            } else if self.consume_char(AsciiChar::GreaterThan).is_some() {
+                Some(RelationalOperator::NotEqual)
+            } else {
+                Some(RelationalOperator::Less)
+            }
+        } else if self.consume_char(AsciiChar::GreaterThan).is_some() {
+            if self.consume_char(AsciiChar::Equal).is_some() {
+                Some(RelationalOperator::GreaterEqual)
+            } else if self.consume_char(AsciiChar::LessThan).is_some() {
+                Some(RelationalOperator::NotEqual)
+            } else {
+                Some(RelationalOperator::Greater)
+            }
+        } else if self.consume_char(AsciiChar::Equal).is_some() {
+            Some(RelationalOperator::Equal)
+        } else {
+            None
+        }
+    }
+
     pub fn is_empty(&self) -> bool {
         self.state.cur >= self.stream.len()
     }
@@ -144,6 +210,8 @@ impl<'a> AsciiCharStream<'a> {
 
 #[cfg(test)]
 mod tests {
+    use crate::tiny_basic::char_stream::Keyword;
+
     use super::AsciiCharStream;
 
     #[test]
@@ -160,8 +228,8 @@ mod tests {
     fn test_consume_keyword() {
         {
             let mut stream = AsciiCharStream::from_ascii_str(ascii::AsciiStr::from_ascii(b"PRINT IF 10123 1232").unwrap());
-            assert_eq!(stream.consume_keyword().unwrap().as_str(), "PRINT");
-            assert_eq!(stream.consume_keyword().unwrap().as_str(), "IF");
+            assert_eq!(stream.consume_keyword().unwrap(), Keyword::Print);
+            assert_eq!(stream.consume_keyword().unwrap(), Keyword::If);
             assert!(stream.consume_keyword().is_none());
         }
     }
@@ -170,14 +238,14 @@ mod tests {
     fn test_consume_string() {
         {
             let mut stream = AsciiCharStream::from_ascii_str(ascii::AsciiStr::from_ascii(b"PRINT \"Hello world\"").unwrap());
-            assert_eq!(stream.consume_keyword().unwrap().as_str(), "PRINT");
+            assert_eq!(stream.consume_keyword().unwrap(), Keyword::Print);
             assert_eq!(stream.consume_string().unwrap().as_str(), "Hello world");
             assert!(stream.is_empty());
         }
 
         {
             let mut stream = AsciiCharStream::from_ascii_str(ascii::AsciiStr::from_ascii(b"PRINT \"\"").unwrap());
-            assert_eq!(stream.consume_keyword().unwrap().as_str(), "PRINT");
+            assert_eq!(stream.consume_keyword().unwrap(), Keyword::Print);
             assert_eq!(stream.consume_string().unwrap().as_str(), "");
         }
     }
@@ -186,7 +254,7 @@ mod tests {
     fn test_consume_var() {
         {
             let mut stream = AsciiCharStream::from_ascii_str(ascii::AsciiStr::from_ascii(b"PRINT A").unwrap());
-            assert_eq!(stream.consume_keyword().unwrap().as_str(), "PRINT");
+            assert_eq!(stream.consume_keyword().unwrap(), Keyword::Print);
             assert_eq!(stream.consume_var().unwrap().as_str(), "A");
         }
     }
@@ -195,7 +263,7 @@ mod tests {
     fn test_is_empty() {
         {
             let mut stream = AsciiCharStream::from_ascii_str(ascii::AsciiStr::from_ascii(b"PRINT A").unwrap());
-            assert_eq!(stream.consume_keyword().unwrap().as_str(), "PRINT");
+            assert_eq!(stream.consume_keyword().unwrap(), Keyword::Print);
             assert_eq!(stream.consume_var().unwrap().as_str(), "A");
             assert!(stream.is_empty());
         }

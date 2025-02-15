@@ -28,6 +28,8 @@ use std::collections::{BTreeMap, HashMap};
 use crate::tiny_basic::char_stream::AsciiCharStream; 
 use crate::tiny_basic::code_line::LineNumber;
 
+use super::char_stream::Keyword;
+
 const ACCEPTABLE_VAR_NAMES: [char; 26] = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'];
 const DIGITS: [char; 10] = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
 
@@ -73,17 +75,29 @@ impl Interpreter {
         .expect("Expected line to be ASCII");
         let mut line = AsciiCharStream::from_ascii_str(line);
 
-        let keyword = line.consume_keyword().ok_or(TinyBasicError::ExpectedKeyword)?.as_str();
+        self.statement(&mut line)?;
 
-        match keyword {
-            "PRINT" => {
-                self.print(&mut line)
-            },
-            _ => Err(TinyBasicError::UnrecognisedKeyword)
+        match line.is_empty() {
+            true => Ok(()),
+            false => Err(TinyBasicError::ExpectedEndOfLine)
         }
     }
 
-    fn print<'a>(&self, expr_list: &mut AsciiCharStream) -> result::Result<()> {
+    fn statement(&self, statement: &mut AsciiCharStream) -> result::Result<()> {
+        let keyword = statement.consume_keyword().ok_or(TinyBasicError::ExpectedKeyword)?;
+
+        match keyword {
+            Keyword::Print => {
+                self.print_stmt(statement)
+            },
+            Keyword::If => {
+                self.if_stmt(statement)
+            },
+            _ => Err(TinyBasicError::UnexpectedKeyword)
+        }
+    }
+
+    fn print_stmt<'a>(&self, expr_list: &mut AsciiCharStream) -> result::Result<()> {
         if let Some(string) = expr_list.consume_string() {
             print!("{} ", string);
         } else {
@@ -102,6 +116,37 @@ impl Interpreter {
 
         println!();
 
+        Ok(())
+    }
+
+    fn if_stmt(&self, line: &mut AsciiCharStream) -> result::Result<()> {
+        let lhs = self.expression(line)?;
+        let relop = line
+            .consume_relop()
+            .ok_or(TinyBasicError::ExpectedRelationalOperator)?;
+        let rhs = self.expression(line)?;
+
+        let condition = match relop {
+            super::char_stream::RelationalOperator::Less => lhs < rhs,
+            super::char_stream::RelationalOperator::Greater => lhs > rhs,
+            super::char_stream::RelationalOperator::LessEqual => lhs <= rhs,
+            super::char_stream::RelationalOperator::GreaterEqual => lhs >= rhs,
+            super::char_stream::RelationalOperator::NotEqual => lhs != rhs,
+            super::char_stream::RelationalOperator::Equal => lhs == rhs,
+        };
+
+        if condition {
+            line
+                .consume_keyword()
+                .and_then(|keyword| {
+                    match keyword {
+                        Keyword::Then => Some(()),
+                        _ => None
+                    }
+                })
+                .ok_or(TinyBasicError::ExpectedKeyword)?;
+            self.statement(line)?;
+        }
         Ok(())
     }
 
