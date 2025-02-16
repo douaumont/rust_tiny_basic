@@ -26,7 +26,9 @@ pub enum Keyword {
     Then,
     Run,
     List,
-    Clear
+    Clear,
+    Goto,
+    Let
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -132,6 +134,8 @@ impl<'a> AsciiCharStream<'a> {
                 "RUN" => Some(Keyword::Run),
                 "LIST" => Some(Keyword::List),
                 "CLEAR" => Some(Keyword::Clear),
+                "GOTO" => Some(Keyword::Goto),
+                "LET" => Some(Keyword::Let),
                 _ => None
             }
         }
@@ -157,7 +161,16 @@ impl<'a> AsciiCharStream<'a> {
 
     pub fn consume_var(&mut self) -> Option<&AsciiStr> {
         let mut var_end = self.clone();
-        var_end.consume_char_if(AsciiChar::is_ascii_alphabetic);
+        var_end.advance_while(AsciiChar::is_ascii_alphabetic);
+        if var_end.state == self.state {
+            return None;
+        }
+        var_end.advance_while(|ch| 
+            ch.is_ascii_alphabetic()
+            || ch.is_ascii_digit()
+            || *ch == AsciiChar::UnderScore
+            || *ch == AsciiChar::Minus);
+
         if var_end.state == self.state {
             None
         } else {
@@ -190,6 +203,10 @@ impl<'a> AsciiCharStream<'a> {
         } else {
             None
         }
+    }
+
+    pub fn flush(&mut self) {
+        self.state.cur = self.stream.len();
     }
 
     pub fn is_empty(&self) -> bool {

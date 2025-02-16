@@ -30,7 +30,8 @@ pub enum Error {
     FactorCouldNotBeParsed,
     ExpectedEndOfLine,
     ExpectedRelationalOperator,
-    UnexpectedKeyword
+    UnexpectedKeyword,
+    ExpectedVariableName
 }
 
 impl From<std::num::ParseIntError> for Error {
@@ -53,6 +54,7 @@ impl std::fmt::Display for Error {
             Error::ExpectedEndOfLine => todo!(),
             Error::ExpectedRelationalOperator => todo!(),
             Error::UnexpectedKeyword => todo!(),
+            Error::ExpectedVariableName => todo!(),
         }
     }
 }

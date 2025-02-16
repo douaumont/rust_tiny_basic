@@ -20,7 +20,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::cell::Cell;
 
-use ascii::{AsciiChar, AsciiStr};
+use ascii::{AsciiChar, AsciiStr, AsciiString};
 
 use crate::tiny_basic::result;
 use crate::tiny_basic::code_line::parse_line;
@@ -33,19 +33,28 @@ use crate::tiny_basic::code_line::LineNumber;
 
 use super::char_stream::Keyword;
 
-const ACCEPTABLE_VAR_NAMES: [char; 26] = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'];
-const DIGITS: [char; 10] = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+/// Indicated what line should be executed at current iteration
+#[derive(Clone, Copy)]
+enum CurrentLine {
+    /// Next line to be executed has this index
+    LineIndex(types::Number),
+    /// We have returned from subroutine and want to know which lines
+    /// follows this one
+    ReturnAddress(types::Number)
+}
 
 pub struct Interpreter {
     lines: Cell<BTreeMap<LineNumber, String>>,
-    environment: HashMap<char, types::Number>
+    next_line_to_execute: Option<CurrentLine>,
+    environment: HashMap<AsciiString, types::Number>
 }
 
 impl Interpreter {
     pub fn new() -> Self {
         Interpreter {
             lines: Cell::new(BTreeMap::new()),
-            environment: HashMap::new()
+            environment: HashMap::new(),
+            next_line_to_execute: None
         }
     }
 
@@ -95,7 +104,9 @@ impl Interpreter {
             Keyword::Run => self.run_stmt(),
             Keyword::List => self.list_stmt(),
             Keyword::Clear => self.clear_stmt(),
-            _ => Err(TinyBasicError::UnexpectedKeyword)
+            Keyword::Goto => self.goto_stmt(statement),
+            Keyword::Then => Err(TinyBasicError::UnexpectedKeyword),
+            Keyword::Let => self.let_stmt(statement),
         }
     }
 
@@ -147,8 +158,29 @@ impl Interpreter {
                     }
                 })
                 .ok_or(TinyBasicError::ExpectedKeyword)?;
-            self.statement(line)?;
+            self.statement(line)
+        } else {
+            line.flush();
+            Ok(())
         }
+    }
+
+    fn goto_stmt(&mut self, line: &mut AsciiCharStream) -> result::Result<()> {
+        let next_line_index = self.expression(line)?;
+        self.next_line_to_execute = Some(CurrentLine::LineIndex(next_line_index));
+        Ok(())
+    }
+
+    fn let_stmt(&mut self, line: &mut AsciiCharStream) -> result::Result<()> {
+        let var_name = 
+            line
+            .consume_var()
+            .ok_or(TinyBasicError::ExpectedVariableName)?.to_owned();
+        line
+            .consume_char(AsciiChar::Equal)
+            .ok_or(TinyBasicError::Expected('='))?;
+        let value = self.expression(line)?;
+        self.environment.insert(var_name, value);
         Ok(())
     }
 
@@ -156,13 +188,32 @@ impl Interpreter {
         // Move lines into local variable to satisfy borrow checker
         let lines = self.lines.take();
         let mut res: result::Result<_> = Ok(());
+        match lines.first_key_value() {
+            Some((index, _)) => {
+                self.next_line_to_execute = Some(CurrentLine::LineIndex(*index as types::Number));
+            },
+            None => todo!(),
+        }
         
-        for (i, line) in lines.iter() {
-            match self.run_line(line) {
-                Ok(_) => continue,
-                Err(error) => {
-                    res = Err(error);
-                    break;
+        while let Some(current_line) = self.next_line_to_execute {
+            match current_line {
+                CurrentLine::LineIndex(i) => {
+                    self.next_line_to_execute = Self::find_next_line_index(&lines, i);
+                    res = match lines.get(&(i as i32)) {
+                        Some(line) => {
+                            self.run_line(line)
+                        },
+                        None => {
+                            Ok(())
+                        },
+                    };
+                    if res.is_err() {
+                        break;
+                    }
+                },
+                CurrentLine::ReturnAddress(i) => {
+                    self.next_line_to_execute = Self::find_next_line_index(&lines, i);
+                    continue;
                 },
             }
         }
@@ -184,6 +235,17 @@ impl Interpreter {
     fn clear_stmt(&mut self) -> result::Result<()> {
         self.lines.get_mut().clear();
         Ok(())
+    }
+
+    fn find_next_line_index(lines: &BTreeMap<LineNumber, String>, pivot_index: types::Number) -> Option<CurrentLine> {
+        let next_line_index = lines
+        .keys()
+        .skip_while(|line_index| **line_index as types::Number != pivot_index)
+        .nth(1);
+
+        next_line_index.and_then(|next_line_index| {
+            Some(CurrentLine::LineIndex(*next_line_index as types::Number))
+        })
     }
 
     fn expression(&self, line: &mut AsciiCharStream) -> result::Result<types::Number> {
@@ -219,7 +281,10 @@ impl Interpreter {
 
     fn factor(&self, line: &mut AsciiCharStream) -> result::Result<types::Number>  {
         if let Some(var_name) = line.consume_var() {
-            todo!("Variables will be implemented later");
+            Ok(self.environment
+                .get(var_name)
+                .cloned()
+                .unwrap_or(0))
         } else if let Some(number) = line.consume_number() {
             let number: types::Number = number.as_str().parse()?;
             Ok(number)
