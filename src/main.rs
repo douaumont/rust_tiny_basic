@@ -20,33 +20,46 @@ mod tiny_basic;
 
 use std::{io::{stdin, stdout, Write}, process::ExitCode};
 
-fn main() -> ExitCode {
+const PROMPT: &'static str = "tiny_basic> ";
+
+/// Read, Evaluate, Print, Loop
+/// of the interpreter
+fn repl() -> std::io::Result<()> {
     let mut interpreter = tiny_basic::interpreter::Interpreter::new();
     loop {
         let mut line = String::new();
-        print!("tiny_basic> ");
-        stdout().flush();
-        match stdin().read_line(&mut line) {
-            Ok(bytes_read) => {
-                if bytes_read == 0 {
-                    return ExitCode::SUCCESS;
-                }
-                if !line.chars().all(|c |c.is_ascii()) {
-                    eprintln!("All characters should be ASCII-only");
-                    continue;
-                }
-                
-                match interpreter.execute(line.trim()) {
-                    Ok(_) => (),
-                    Err(error) => {
-                        eprintln!("{:?}", error);
-                    },
-                }
-            },
-            Err(kind) => {
-                eprintln!("{}", kind);
-                return ExitCode::FAILURE;
-            }
+        
+        print!("{}", PROMPT);
+        stdout().flush()?;
+
+        let bytes_read = stdin().read_line(&mut line)?;
+        if bytes_read == 0 {
+            return Ok(());
         }
+
+        let line = match ascii::AsciiStr::from_ascii(line.as_bytes()) {
+            Ok(line) => line,
+            Err(_) => {
+                eprintln!("Current implementation requires all input to be ASCII-only");
+                continue;
+            },
+        };
+        
+        match interpreter.execute(line) {
+            Ok(_) => (),
+            Err(error) => {
+                eprintln!("{:?}", error);
+            },
+        }
+    }
+}
+
+fn main() -> ExitCode {
+    match repl() {
+        Ok(_) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("{}", error);
+            ExitCode::FAILURE
+        },
     }
 }

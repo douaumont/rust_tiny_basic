@@ -16,46 +16,70 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+use ascii::AsciiStr;
+
 use crate::tiny_basic::error::Error as TinyBasicError;
+use crate::tiny_basic::char_stream::AsciiCharStream;
+use crate::tiny_basic::types;
 
-pub type LineNumber = i32;
+pub struct Line<'a> {
+    pub index: Option<types::Number>,
+    pub statement: &'a AsciiStr
+}
 
-pub const MIN_LINE_NUMBER: LineNumber = 1;
-pub const MAX_LINE_NUMBER: LineNumber = 10000;
+impl<'a> TryFrom<&'a AsciiStr> for Line<'a> {
+    type Error = TinyBasicError;
 
-pub type CodeLine<'a> = (Option<LineNumber>, &'a str);
-
-pub fn parse_line<'a>(line: &'a str) -> Result<CodeLine<'a>, TinyBasicError> {
-    if let Some(line_number_end) = get_line_number_end(line) {
-        let line_number: LineNumber = line[0..line_number_end].parse().expect("Line number should be parsed.");
-
-        if (MIN_LINE_NUMBER..=MAX_LINE_NUMBER).contains(&line_number) {
-            Ok((
-                Some(line_number),
-                line[line_number_end..line.len()].trim_ascii_start()
-            ))
+    fn try_from(value: &'a AsciiStr) -> Result<Self, Self::Error> {
+        let mut char_stream = AsciiCharStream::from_ascii_str(value);
+        if let Some(line_index) = char_stream.consume_number() {
+            let line_index = line_index.as_str().parse::<types::Number>()?;
+            Ok(Self{
+                index: Some(line_index),
+                statement: char_stream.flush()
+            })
         } else {
-            Err(TinyBasicError::InvalidLineNumber)
+            Ok(Self{
+                index: None,
+                statement: char_stream.flush()
+            })
         }
-    } else {
-        Ok((
-            None, line
-        ))
     }
 }
 
-fn get_line_number_end(line: &str) -> Option<usize> {
-    if line.starts_with(|c: char| c.is_ascii_digit()) {
-        let mut line_number_end = 0;
-        for (i, c) in line.chars().enumerate() {
-            if c.is_ascii_digit() {
-                line_number_end = i;
-            } else {
-                break;
-            }
+#[cfg(test)]
+mod tests {
+    use ascii::{AsciiString, AsAsciiStr};
+
+    use super::Line;
+
+    #[test]
+    fn test_line_no_number() {
+        {
+            let input = AsciiString::from_ascii(b"PRINT H").unwrap();
+            let line = Line::try_from(input.as_ascii_str().unwrap()).unwrap();
+            assert!(line.index.is_none());
+            assert_eq!(line.statement, input.as_ascii_str().unwrap());
         }
-        Some(line_number_end + 1)
-    } else {
-        None
+    }
+
+    #[test]
+    fn test_line_with_number() {
+        {
+            let input = AsciiString::from_ascii(b"220 PRINT H").unwrap();
+            let line = Line::try_from(input.as_ascii_str().unwrap()).unwrap();
+            assert_eq!(line.index, Some(220));
+            assert_eq!(line.statement.as_str(), "PRINT H");
+        }
+    }
+
+    #[test]
+    fn test_line_with_empty_statement() {
+        {
+            let input = AsciiString::from_ascii(b"220").unwrap();
+            let line = Line::try_from(input.as_ascii_str().unwrap()).unwrap();
+            assert_eq!(line.index, Some(220));
+            assert!(line.statement.is_empty());
+        }
     }
 }

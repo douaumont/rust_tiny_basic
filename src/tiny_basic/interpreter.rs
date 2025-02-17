@@ -20,16 +20,16 @@
 use std::collections::{BTreeMap, HashMap};
 use std::cell::Cell;
 
+use scopeguard::{defer, guard};
 use ascii::{AsciiChar, AsciiStr, AsciiString};
 
 use crate::tiny_basic::result;
-use crate::tiny_basic::code_line::parse_line;
+use crate::tiny_basic::code_line;
 use crate::tiny_basic::types;
 use crate::tiny_basic::error::Error as TinyBasicError;
 
 
-use crate::tiny_basic::char_stream::AsciiCharStream; 
-use crate::tiny_basic::code_line::LineNumber;
+use crate::tiny_basic::char_stream::AsciiCharStream;
 
 use super::char_stream::Keyword;
 
@@ -44,7 +44,7 @@ enum CurrentLine {
 }
 
 pub struct Interpreter {
-    lines: Cell<BTreeMap<LineNumber, String>>,
+    lines: Cell<BTreeMap<types::Number, AsciiString>>,
     next_line_to_execute: Option<CurrentLine>,
     environment: HashMap<AsciiString, types::Number>
 }
@@ -58,33 +58,29 @@ impl Interpreter {
         }
     }
 
-    pub fn execute<'a>(&mut self, line: &'a str) -> result::Result<()> {
-        assert!(!line.starts_with(' ') && !line.ends_with(' '));
+    pub fn execute<'a>(&mut self, line: &'a AsciiStr) -> result::Result<()> {
+        let line = 
+            code_line::Line::try_from(line.trim())?;
 
-        let parsed_line = parse_line(line)?;
-        let line_index = parsed_line.0;
-
-        match line_index {
+        match line.index {
             Some(i) => {
-                if parsed_line.1.is_empty() {
+                if line.statement.is_empty() {
                     self.erase_line(i);
                 } else {
-                    self.lines.get_mut().insert(i, parsed_line.1.to_string());
+                    self.lines.get_mut().insert(i, line.statement.to_owned());
                 }
             },
-            None => self.run_line(line)?
+            None => self.run_line(line.statement)?
         }
         
         Ok(())
     }
 
-    fn erase_line(&mut self, line_number: LineNumber) {
+    fn erase_line(&mut self, line_number: types::Number) {
         self.lines.get_mut().remove(&line_number);
     }
 
-    fn run_line<'a>(&mut self, line: &'a str) -> result::Result<()> {
-        let line = AsciiStr::from_ascii(line.as_bytes())
-        .expect("Expected line to be ASCII");
+    fn run_line<'a>(&mut self, line: &'a AsciiStr) -> result::Result<()> {
         let mut line = AsciiCharStream::from_ascii_str(line);
 
         self.statement(&mut line)?;
@@ -187,7 +183,10 @@ impl Interpreter {
     fn run_stmt(&mut self) -> result::Result<()> {
         // Move lines into local variable to satisfy borrow checker
         let lines = self.lines.take();
-        let mut res: result::Result<_> = Ok(());
+        defer!{
+            self.lines.set(lines)
+        }
+
         match lines.first_key_value() {
             Some((index, _)) => {
                 self.next_line_to_execute = Some(CurrentLine::LineIndex(*index as types::Number));
@@ -199,28 +198,18 @@ impl Interpreter {
             match current_line {
                 CurrentLine::LineIndex(i) => {
                     self.next_line_to_execute = Self::find_next_line_index(&lines, i);
-                    res = match lines.get(&(i as i32)) {
-                        Some(line) => {
-                            self.run_line(line)
-                        },
-                        None => {
-                            Ok(())
-                        },
-                    };
-                    if res.is_err() {
-                        break;
+                    if let Some(line) = lines.get(&i) {
+                        self.run_line(line)?;   
                     }
-                },
+                }
                 CurrentLine::ReturnAddress(i) => {
                     self.next_line_to_execute = Self::find_next_line_index(&lines, i);
                     continue;
                 },
             }
         }
-        
-        self.lines.set(lines);
 
-        res
+        Ok(())
     }
 
     fn list_stmt(&self) -> result::Result<()> {
@@ -237,7 +226,7 @@ impl Interpreter {
         Ok(())
     }
 
-    fn find_next_line_index(lines: &BTreeMap<LineNumber, String>, pivot_index: types::Number) -> Option<CurrentLine> {
+    fn find_next_line_index(lines: &BTreeMap<types::Number, AsciiString>, pivot_index: types::Number) -> Option<CurrentLine> {
         let next_line_index = lines
         .keys()
         .skip_while(|line_index| **line_index as types::Number != pivot_index)
@@ -320,31 +309,5 @@ fn get_sign_value(ch: AsciiChar) -> types::Number {
         ascii::AsciiChar::Plus => 1,
         ascii::AsciiChar::Minus => -1,
         _ => unreachable!()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::parse_line;
-
-    #[test]
-    fn test_line_parsing() {
-        {
-            let (i, line) =parse_line("10   PRINT").unwrap();
-            assert!(i == Some(10));
-            assert!(line == "PRINT");
-        }
-
-        {
-            let (i, line) = parse_line("10").unwrap();
-            assert!(i == Some(10));
-            assert!(line.is_empty());
-        }
-
-        {
-            let (i, line) = parse_line("PRINT \"HELLO\"").unwrap();
-            assert!(i == None);
-            assert!(line == "PRINT \"HELLO\"");
-        }
     }
 }

@@ -205,8 +205,10 @@ impl<'a> AsciiCharStream<'a> {
         }
     }
 
-    pub fn flush(&mut self) {
+    pub fn flush(&mut self) -> &'a AsciiStr {
+        let remaining = &self.stream[self.state.cur..];
         self.state.cur = self.stream.len();
+        remaining
     }
 
     pub fn is_empty(&self) -> bool {
