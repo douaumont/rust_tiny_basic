@@ -2,7 +2,12 @@
 name = "tiny_basic"
 version = "0.1.0"
 edition = "2021"
+authors = ["Artyom Makarov"]
+rust-version = "1.83"
+repository = "https://github.com/douaumont/rust_tiny_basic"
+description = "Tiny BASIC interpreter written in Rust"
+readme = "README.md"
+license = "GPL-3.0"
 
 [dependencies]
 ascii = "1.1.0"
-scopeguard = "1.2.0"
