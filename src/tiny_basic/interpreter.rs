@@ -20,7 +20,6 @@
 use std::collections::{BTreeMap, HashMap};
 use std::cell::Cell;
 
-use scopeguard::{defer, guard};
 use ascii::{AsciiChar, AsciiStr, AsciiString};
 
 use crate::tiny_basic::result;
@@ -43,18 +42,24 @@ enum CurrentLine {
     ReturnAddress(types::Number)
 }
 
+type Environment = HashMap<AsciiString, types::Number>;
+type LineStorage = BTreeMap<types::Number, AsciiString>;
+type ReturnStack = Vec<CurrentLine>;
+
 pub struct Interpreter {
-    lines: Cell<BTreeMap<types::Number, AsciiString>>,
+    lines: Cell<LineStorage>,
     next_line_to_execute: Option<CurrentLine>,
-    environment: HashMap<AsciiString, types::Number>
+    environment: Environment,
+    return_stack: ReturnStack
 }
 
 impl Interpreter {
     pub fn new() -> Self {
         Interpreter {
-            lines: Cell::new(BTreeMap::new()),
-            environment: HashMap::new(),
-            next_line_to_execute: None
+            lines: Cell::new(LineStorage::new()),
+            environment: Environment::new(),
+            next_line_to_execute: None,
+            return_stack: ReturnStack::new()
         }
     }
 
@@ -103,6 +108,9 @@ impl Interpreter {
             Keyword::Goto => self.goto_stmt(statement),
             Keyword::Then => Err(TinyBasicError::UnexpectedKeyword),
             Keyword::Let => self.let_stmt(statement),
+            Keyword::Gosub => self.gosub_stmt(statement),
+            Keyword::Return => self.return_stmt(),
+            Keyword::End => self.end_stmt(),
         }
     }
 
@@ -180,13 +188,45 @@ impl Interpreter {
         Ok(())
     }
 
+    fn gosub_stmt(&mut self, line: &mut AsciiCharStream) -> result::Result<()> {
+        let subroutine_address = self.expression(line)?;
+        let current_line_index = 
+            self.next_line_to_execute
+            .ok_or(TinyBasicError::GosubCannotBeUsedInInteractiveMode)?;
+
+        match current_line_index {
+            CurrentLine::LineIndex(i) => {
+                self.return_stack.push(CurrentLine::LineIndex(i));
+                self.next_line_to_execute = Some(CurrentLine::LineIndex(subroutine_address));
+                Ok(())
+            },
+            CurrentLine::ReturnAddress(_) => unreachable!("Current line must always be LineIndex"),
+        }
+    }
+
+    fn return_stmt(&mut self) -> result::Result<()> {
+        let return_address = self
+            .return_stack
+            .pop()
+            .ok_or(TinyBasicError::ReturnOnEmptyStack)?;
+        self.next_line_to_execute = Some(return_address);
+        Ok(())
+    }
+
+    fn end_stmt(&mut self) -> result::Result<()> {
+        Err(TinyBasicError::ExecutionReachedEnd)
+    }
+
     fn run_stmt(&mut self) -> result::Result<()> {
         // Move lines into local variable to satisfy borrow checker
         let lines = self.lines.take();
-        defer!{
-            self.lines.set(lines)
-        }
+        let execution_res = self.run_lines(&lines);
+        self.lines.set(lines);
+        self.next_line_to_execute = None;
+        execution_res
+    }
 
+    fn run_lines(&mut self, lines: &LineStorage) -> result::Result<()> {
         match lines.first_key_value() {
             Some((index, _)) => {
                 self.next_line_to_execute = Some(CurrentLine::LineIndex(*index as types::Number));
@@ -226,7 +266,7 @@ impl Interpreter {
         Ok(())
     }
 
-    fn find_next_line_index(lines: &BTreeMap<types::Number, AsciiString>, pivot_index: types::Number) -> Option<CurrentLine> {
+    fn find_next_line_index(lines: &LineStorage, pivot_index: types::Number) -> Option<CurrentLine> {
         let next_line_index = lines
         .keys()
         .skip_while(|line_index| **line_index as types::Number != pivot_index)

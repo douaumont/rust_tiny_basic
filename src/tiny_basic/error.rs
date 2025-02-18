@@ -29,7 +29,10 @@ pub enum Error {
     ExpectedRelationalOperator,
     UnexpectedKeyword,
     ExpectedVariableName,
-    NumberParseError(std::num::IntErrorKind)
+    NumberParseError(std::num::IntErrorKind),
+    GosubCannotBeUsedInInteractiveMode,
+    ReturnOnEmptyStack,
+    ExecutionReachedEnd
 }
 
 impl From<std::num::ParseIntError> for Error {
@@ -53,6 +56,9 @@ impl std::fmt::Display for Error {
             Error::UnexpectedKeyword => todo!(),
             Error::ExpectedVariableName => todo!(),
             Error::NumberParseError(int_error_kind) => todo!(),
+            Error::GosubCannotBeUsedInInteractiveMode => todo!(),
+            Error::ReturnOnEmptyStack => todo!(),
+            Error::ExecutionReachedEnd => todo!(),
         }
     }
 }

@@ -28,7 +28,10 @@ pub enum Keyword {
     List,
     Clear,
     Goto,
-    Let
+    Let,
+    Gosub,
+    Return,
+    End
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -136,6 +139,9 @@ impl<'a> AsciiCharStream<'a> {
                 "CLEAR" => Some(Keyword::Clear),
                 "GOTO" => Some(Keyword::Goto),
                 "LET" => Some(Keyword::Let),
+                "GOSUB" => Some(Keyword::Gosub),
+                "RETURN" => Some(Keyword::Return),
+                "END" => Some(Keyword::End),
                 _ => None
             }
         }
