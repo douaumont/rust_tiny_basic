@@ -16,11 +16,11 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-
+use std::io::{stdin, stdout, Write};
 use std::collections::{BTreeMap, HashMap};
 use std::cell::Cell;
 
-use ascii::{AsciiChar, AsciiStr, AsciiString};
+use ascii::{AsAsciiStr, AsciiChar, AsciiStr, AsciiString};
 
 use crate::tiny_basic::result;
 use crate::tiny_basic::code_line;
@@ -111,6 +111,7 @@ impl Interpreter {
             Keyword::Gosub => self.gosub_stmt(statement),
             Keyword::Return => self.return_stmt(),
             Keyword::End => self.end_stmt(),
+            Keyword::Input => self.input_stmt(statement),
         }
     }
 
@@ -213,12 +214,41 @@ impl Interpreter {
         Ok(())
     }
 
+    fn input_stmt(&mut self, var_list: &mut AsciiCharStream) -> result::Result<()> {
+        let var_name = var_list
+            .consume_var()
+            .ok_or(TinyBasicError::ExpectedVariableName)?;
+
+        print!("{}? ", var_name);
+        stdout().flush();
+        let user_input = Self::get_user_input()?;
+        if let Some(number) = user_input.as_str().parse::<types::Number>().ok() {
+            self.environment.insert(var_name.to_owned(), number);
+        } else {
+            let first_char_code = *user_input.as_bytes().iter().nth(0).expect("Expected non-empty user input");
+            self.environment.insert(var_name.to_owned(), first_char_code as types::Number);
+        }
+        Ok(())
+    }
+
+    fn get_user_input() -> result::Result<AsciiString> {
+        let mut user_input = String::new();
+        while let Ok(read_bytes) = stdin().read_line(&mut user_input) {
+            if read_bytes > 0 {
+                break;
+            }
+        }
+        Ok(user_input.trim().as_ascii_str()?.to_owned())
+    }
+
     fn end_stmt(&mut self) -> result::Result<()> {
         Err(TinyBasicError::ExecutionReachedEnd)
     }
 
     fn run_stmt(&mut self) -> result::Result<()> {
         // Move lines into local variable to satisfy borrow checker
+        // Currently I have no idea how to guarantee that self.lines will no be mutated
+        // While the program is executed
         let lines = self.lines.take();
         let execution_res = self.run_lines(&lines);
         self.lines.set(lines);

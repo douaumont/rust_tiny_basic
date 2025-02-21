@@ -32,12 +32,19 @@ pub enum Error {
     NumberParseError(std::num::IntErrorKind),
     GosubCannotBeUsedInInteractiveMode,
     ReturnOnEmptyStack,
-    ExecutionReachedEnd
+    ExecutionReachedEnd,
+    ExpectedAsciiInput
 }
 
 impl From<std::num::ParseIntError> for Error {
     fn from(value: std::num::ParseIntError) -> Self {
         Self::NumberParseError(value.kind().clone())
+    }
+}
+
+impl From<ascii::AsAsciiStrError> for Error {
+    fn from(_value: ascii::AsAsciiStrError) -> Self {
+        Error::ExpectedAsciiInput
     }
 }
 
@@ -59,6 +66,7 @@ impl std::fmt::Display for Error {
             Error::GosubCannotBeUsedInInteractiveMode => todo!(),
             Error::ReturnOnEmptyStack => todo!(),
             Error::ExecutionReachedEnd => todo!(),
+            Error::ExpectedAsciiInput => todo!(),
         }
     }
 }

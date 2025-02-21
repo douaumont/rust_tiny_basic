@@ -31,7 +31,8 @@ pub enum Keyword {
     Let,
     Gosub,
     Return,
-    End
+    End,
+    Input
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -142,6 +143,7 @@ impl<'a> AsciiCharStream<'a> {
                 "GOSUB" => Some(Keyword::Gosub),
                 "RETURN" => Some(Keyword::Return),
                 "END" => Some(Keyword::End),
+                "INPUT" => Some(Keyword::Input),
                 _ => None
             }
         }
