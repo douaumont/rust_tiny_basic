@@ -26,12 +26,12 @@ const PROMPT: &'static str = "tiny_basic> ";
 /// of the interpreter
 fn repl() -> std::io::Result<()> {
     let mut interpreter = tiny_basic::interpreter::Interpreter::new();
+    
     loop {
-        let mut line = String::new();
-        
         print!("{}", PROMPT);
         stdout().flush()?;
 
+        let mut line = String::new();
         let bytes_read = stdin().read_line(&mut line)?;
         if bytes_read == 0 {
             return Ok(());

@@ -20,5 +20,6 @@ mod code_line;
 mod error;
 mod types;
 mod char_stream;
+mod program_storage;
 pub mod result;
 pub mod interpreter;

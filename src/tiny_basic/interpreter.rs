@@ -26,6 +26,7 @@ use crate::tiny_basic::result;
 use crate::tiny_basic::code_line;
 use crate::tiny_basic::types;
 use crate::tiny_basic::error::Error as TinyBasicError;
+use crate::tiny_basic::program_storage::ProgramStorage;
 
 
 use crate::tiny_basic::char_stream::AsciiCharStream;
@@ -43,27 +44,26 @@ enum CurrentLine {
 }
 
 type Environment = HashMap<AsciiString, types::Number>;
-type LineStorage = BTreeMap<types::Number, AsciiString>;
 type ReturnStack = Vec<CurrentLine>;
 
-pub struct Interpreter {
-    lines: Cell<LineStorage>,
+pub struct Interpreter<'a> {
+    lines: ProgramStorage<'a>,
     next_line_to_execute: Option<CurrentLine>,
     environment: Environment,
     return_stack: ReturnStack
 }
 
-impl Interpreter {
+impl<'a> Interpreter<'a> {
     pub fn new() -> Self {
         Interpreter {
-            lines: Cell::new(LineStorage::new()),
+            lines: ProgramStorage::new(),
             environment: Environment::new(),
             next_line_to_execute: None,
             return_stack: ReturnStack::new()
         }
     }
 
-    pub fn execute<'a>(&mut self, line: &'a AsciiStr) -> result::Result<()> {
+    pub fn execute(&mut self, line: &AsciiStr) -> result::Result<()> {
         let line = 
             code_line::Line::try_from(line.trim())?;
 
@@ -72,7 +72,7 @@ impl Interpreter {
                 if line.statement.is_empty() {
                     self.erase_line(i);
                 } else {
-                    self.lines.get_mut().insert(i, line.statement.to_owned());
+                    self.lines.insert_line(i, line.statement.to_owned());
                 }
             },
             None => self.run_line(line.statement)?
@@ -81,11 +81,11 @@ impl Interpreter {
         Ok(())
     }
 
-    fn erase_line(&mut self, line_number: types::Number) {
-        self.lines.get_mut().remove(&line_number);
+    fn erase_line(&mut self, line_index: types::Number) {
+        self.lines.erase_line(line_index);
     }
 
-    fn run_line<'a>(&mut self, line: &'a AsciiStr) -> result::Result<()> {
+    fn run_line(&mut self, line: &AsciiStr) -> result::Result<()> {
         let mut line = AsciiCharStream::from_ascii_str(line);
 
         self.statement(&mut line)?;
@@ -115,7 +115,7 @@ impl Interpreter {
         }
     }
 
-    fn print_stmt<'a>(&mut self, expr_list: &mut AsciiCharStream) -> result::Result<()> {
+    fn print_stmt(&mut self, expr_list: &mut AsciiCharStream) -> result::Result<()> {
         if let Some(string) = expr_list.consume_string() {
             print!("{} ", string);
         } else {
@@ -215,6 +215,14 @@ impl Interpreter {
     }
 
     fn input_stmt(&mut self, var_list: &mut AsciiCharStream) -> result::Result<()> {
+        self.input_var(var_list)?;
+        while var_list.consume_char(AsciiChar::Comma).is_some() {
+            self.input_var(var_list)?;
+        }
+        Ok(())
+    }
+
+    fn input_var(&mut self,  var_list: &mut AsciiCharStream) -> result::Result<()> {
         let var_name = var_list
             .consume_var()
             .ok_or(TinyBasicError::ExpectedVariableName)?;
@@ -229,7 +237,7 @@ impl Interpreter {
             self.environment.insert(var_name.to_owned(), first_char_code as types::Number);
         }
         Ok(())
-    }
+    } 
 
     fn get_user_input() -> result::Result<AsciiString> {
         let mut user_input = String::new();
@@ -249,31 +257,33 @@ impl Interpreter {
         // Move lines into local variable to satisfy borrow checker
         // Currently I have no idea how to guarantee that self.lines will no be mutated
         // While the program is executed
-        let lines = self.lines.take();
-        let execution_res = self.run_lines(&lines);
-        self.lines.set(lines);
+        let execution_res = self.run_lines();
         self.next_line_to_execute = None;
         execution_res
     }
 
-    fn run_lines(&mut self, lines: &LineStorage) -> result::Result<()> {
-        match lines.first_key_value() {
-            Some((index, _)) => {
-                self.next_line_to_execute = Some(CurrentLine::LineIndex(*index as types::Number));
+    fn run_lines(&mut self) -> result::Result<()> {
+        match self.lines.get_first_line_index() {
+            Some(index) => {
+                self.next_line_to_execute = Some(CurrentLine::LineIndex(index));
             },
-            None => todo!(),
+            None => return Ok(()),
         }
         
         while let Some(current_line) = self.next_line_to_execute {
             match current_line {
                 CurrentLine::LineIndex(i) => {
-                    self.next_line_to_execute = Self::find_next_line_index(&lines, i);
-                    if let Some(line) = lines.get(&i) {
-                        self.run_line(line)?;   
+                    self.next_line_to_execute = self.lines
+                        .get_following_line_index(i)
+                        .and_then(|line_index| Some(CurrentLine::LineIndex(line_index)));
+                    if let Some(line) = self.lines.get_line(i) {
+                        self.run_line(&line)?;   
                     }
                 }
                 CurrentLine::ReturnAddress(i) => {
-                    self.next_line_to_execute = Self::find_next_line_index(&lines, i);
+                    self.next_line_to_execute = self.lines
+                    .get_following_line_index(i)
+                    .and_then(|line_index| Some(CurrentLine::LineIndex(line_index)));
                     continue;
                 },
             }
@@ -283,28 +293,15 @@ impl Interpreter {
     }
 
     fn list_stmt(&self) -> result::Result<()> {
-        let lines = self.lines.take();
-        for (i, line) in lines.iter() {
+        for (i, line) in self.lines.iter() {
             println!("{} {}", i, line);
         }
-        self.lines.set(lines);
         Ok(())
     }
 
     fn clear_stmt(&mut self) -> result::Result<()> {
-        self.lines.get_mut().clear();
+        self.lines.clear();
         Ok(())
-    }
-
-    fn find_next_line_index(lines: &LineStorage, pivot_index: types::Number) -> Option<CurrentLine> {
-        let next_line_index = lines
-        .keys()
-        .skip_while(|line_index| **line_index as types::Number != pivot_index)
-        .nth(1);
-
-        next_line_index.and_then(|next_line_index| {
-            Some(CurrentLine::LineIndex(*next_line_index as types::Number))
-        })
     }
 
     fn expression(&self, line: &mut AsciiCharStream) -> result::Result<types::Number> {
