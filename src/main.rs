@@ -20,17 +20,21 @@ mod tiny_basic;
 
 use std::{io::{stdin, stdout, Write}, process::ExitCode};
 
-const PROMPT: &'static str = "tiny_basic> ";
+fn print_program_info() {
+    println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+    println!("Copyright (C) 2025 {}", env!("CARGO_PKG_AUTHORS"));
+    println!("License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>");
+    println!("This is free software: you are free to change and redistribute it.");
+    println!("There is NO WARRANTY, to the extent permitted by law.");
+    println!();
+}
 
 /// Read, Evaluate, Print, Loop
 /// of the interpreter
 fn repl() -> std::io::Result<()> {
     let mut interpreter = tiny_basic::interpreter::Interpreter::new();
-    
+    println!("READY");
     loop {
-        print!("{}", PROMPT);
-        stdout().flush()?;
-
         let mut line = String::new();
         let bytes_read = stdin().read_line(&mut line)?;
         if bytes_read == 0 {
@@ -46,7 +50,7 @@ fn repl() -> std::io::Result<()> {
         };
         
         match interpreter.execute(line) {
-            Ok(_) => (),
+            Ok(_) => println!("OK"),
             Err(error) => {
                 eprintln!("{:?}", error);
             },
@@ -55,6 +59,7 @@ fn repl() -> std::io::Result<()> {
 }
 
 fn main() -> ExitCode {
+    print_program_info();
     match repl() {
         Ok(_) => ExitCode::SUCCESS,
         Err(error) => {

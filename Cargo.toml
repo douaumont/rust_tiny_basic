@@ -1,5 +1,5 @@
 [package]
-name = "tiny_basic"
+name = "rust_tiny_basic"
 version = "0.1.0"
 edition = "2021"
 authors = ["Artyom Makarov"]

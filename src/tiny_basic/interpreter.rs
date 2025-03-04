@@ -17,8 +17,7 @@
 */
 
 use std::io::{stdin, stdout, Write};
-use std::collections::{BTreeMap, HashMap};
-use std::cell::Cell;
+use std::collections::HashMap;
 
 use ascii::{AsAsciiStr, AsciiChar, AsciiStr, AsciiString};
 
@@ -33,7 +32,7 @@ use crate::tiny_basic::char_stream::AsciiCharStream;
 
 use super::char_stream::Keyword;
 
-/// Indicated what line should be executed at current iteration
+/// Indicates what line should be executed at current iteration
 #[derive(Clone, Copy)]
 enum CurrentLine {
     /// Next line to be executed has this index
