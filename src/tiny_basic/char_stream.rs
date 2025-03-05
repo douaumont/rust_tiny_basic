@@ -74,6 +74,14 @@ impl<'a> AsciiCharStream<'a> {
         }
     }
 
+    pub fn get_stream(&self) -> &'a AsciiStr {
+        self.stream
+    }
+
+    pub fn get_location(&self) -> usize {
+        self.state.cur
+    }
+
     pub fn peek(&self) -> Option<AsciiChar> {
         self.stream.get_ascii(self.state.cur)
     }

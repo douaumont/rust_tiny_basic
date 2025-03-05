@@ -18,7 +18,7 @@
 
 use ascii::AsciiStr;
 
-use crate::tiny_basic::error::Error as TinyBasicError;
+use crate::tiny_basic::error::ErrorKind as TinyBasicError;
 use crate::tiny_basic::char_stream::AsciiCharStream;
 use crate::tiny_basic::types;
 

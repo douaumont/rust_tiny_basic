@@ -16,8 +16,32 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+use ascii::AsciiStr;
+
+use crate::tiny_basic::char_stream::AsciiCharStream;
+use crate::tiny_basic::types;
+
 #[derive(Debug)]
-pub enum Error {
+pub struct Error<'a> {
+    line_number: Option<types::Number>,
+    context: &'a AsciiStr,
+    location: usize,
+    kind: ErrorKind
+}
+
+impl<'a> Error<'a> {
+    pub fn from(context: &'a AsciiCharStream, kind: ErrorKind, line_number: Option<types::Number>) -> Self {
+        Self {
+            line_number: line_number,
+            context: context.get_stream(),
+            location: context.get_location(),
+            kind: kind
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum ErrorKind {
     UnrecognisedKeyword,
     Expected(char),
     ExpectedKeyword,
@@ -30,43 +54,43 @@ pub enum Error {
     UnexpectedKeyword,
     ExpectedVariableName,
     NumberParseError(std::num::IntErrorKind),
-    GosubCannotBeUsedInInteractiveMode,
+    CommandNotUsableInInteractiveMode,
     ReturnOnEmptyStack,
     ExecutionReachedEnd,
     ExpectedAsciiInput
 }
 
-impl From<std::num::ParseIntError> for Error {
+impl From<std::num::ParseIntError> for ErrorKind {
     fn from(value: std::num::ParseIntError) -> Self {
         Self::NumberParseError(value.kind().clone())
     }
 }
 
-impl From<ascii::AsAsciiStrError> for Error {
+impl From<ascii::AsAsciiStrError> for ErrorKind {
     fn from(_value: ascii::AsAsciiStrError) -> Self {
-        Error::ExpectedAsciiInput
+        ErrorKind::ExpectedAsciiInput
     }
 }
 
-impl std::fmt::Display for Error {
+impl std::fmt::Display for ErrorKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::UnrecognisedKeyword => todo!(),
-            Error::Expected(c) => write!(f, "Expected '{}'", c),
-            Error::ExpectedKeyword => todo!(),
-            Error::ExpectedStringOrExpression => todo!(),
-            Error::UnexpectedOperator => todo!(),
-            Error::NumberCouldNotBeParsed => todo!(),
-            Error::FactorCouldNotBeParsed => todo!(),
-            Error::ExpectedEndOfLine => todo!(),
-            Error::ExpectedRelationalOperator => todo!(),
-            Error::UnexpectedKeyword => todo!(),
-            Error::ExpectedVariableName => todo!(),
-            Error::NumberParseError(int_error_kind) => todo!(),
-            Error::GosubCannotBeUsedInInteractiveMode => todo!(),
-            Error::ReturnOnEmptyStack => todo!(),
-            Error::ExecutionReachedEnd => todo!(),
-            Error::ExpectedAsciiInput => todo!(),
+            ErrorKind::UnrecognisedKeyword => todo!(),
+            ErrorKind::Expected(c) => write!(f, "Expected '{}'", c),
+            ErrorKind::ExpectedKeyword => todo!(),
+            ErrorKind::ExpectedStringOrExpression => todo!(),
+            ErrorKind::UnexpectedOperator => todo!(),
+            ErrorKind::NumberCouldNotBeParsed => todo!(),
+            ErrorKind::FactorCouldNotBeParsed => todo!(),
+            ErrorKind::ExpectedEndOfLine => todo!(),
+            ErrorKind::ExpectedRelationalOperator => todo!(),
+            ErrorKind::UnexpectedKeyword => todo!(),
+            ErrorKind::ExpectedVariableName => todo!(),
+            ErrorKind::NumberParseError(int_error_kind) => todo!(),
+            ErrorKind::CommandNotUsableInInteractiveMode => todo!(),
+            ErrorKind::ReturnOnEmptyStack => todo!(),
+            ErrorKind::ExecutionReachedEnd => todo!(),
+            ErrorKind::ExpectedAsciiInput => todo!(),
         }
     }
 }

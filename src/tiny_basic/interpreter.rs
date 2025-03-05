@@ -24,30 +24,20 @@ use ascii::{AsAsciiStr, AsciiChar, AsciiStr, AsciiString};
 use crate::tiny_basic::result;
 use crate::tiny_basic::code_line;
 use crate::tiny_basic::types;
-use crate::tiny_basic::error::Error as TinyBasicError;
+use crate::tiny_basic::error::{ErrorKind as TinyBasicError, Error};
 use crate::tiny_basic::program_storage::ProgramStorage;
 
 
 use crate::tiny_basic::char_stream::AsciiCharStream;
 
-use super::char_stream::Keyword;
-
-/// Indicates what line should be executed at current iteration
-#[derive(Clone, Copy)]
-enum CurrentLine {
-    /// Next line to be executed has this index
-    LineIndex(types::Number),
-    /// We have returned from subroutine and want to know which lines
-    /// follows this one
-    ReturnAddress(types::Number)
-}
+use crate::tiny_basic::char_stream::Keyword;
 
 type Environment = HashMap<AsciiString, types::Number>;
-type ReturnStack = Vec<CurrentLine>;
+type ReturnStack = Vec<types::Number>;
 
 pub struct Interpreter<'a> {
     lines: ProgramStorage<'a>,
-    next_line_to_execute: Option<CurrentLine>,
+    next_line_to_execute: Option<types::Number>,
     environment: Environment,
     return_stack: ReturnStack
 }
@@ -95,22 +85,22 @@ impl<'a> Interpreter<'a> {
         }
     }
 
-    fn statement(&mut self, statement: &mut AsciiCharStream) -> result::Result<()> {
-        let keyword = statement.consume_keyword().ok_or(TinyBasicError::ExpectedKeyword)?;
+    fn statement(&mut self, stmt: &mut AsciiCharStream) -> result::Result<()> {
+        let keyword = stmt.consume_keyword().ok_or(TinyBasicError::ExpectedKeyword)?;
 
         match keyword {
-            Keyword::Print => self.print_stmt(statement),
-            Keyword::If => self.if_stmt(statement),
+            Keyword::Print => self.print_stmt(stmt),
+            Keyword::If => self.if_stmt(stmt),
             Keyword::Run => self.run_stmt(),
             Keyword::List => self.list_stmt(),
             Keyword::Clear => self.clear_stmt(),
-            Keyword::Goto => self.goto_stmt(statement),
+            Keyword::Goto => self.goto_stmt(stmt),
             Keyword::Then => Err(TinyBasicError::UnexpectedKeyword),
-            Keyword::Let => self.let_stmt(statement),
-            Keyword::Gosub => self.gosub_stmt(statement),
+            Keyword::Let => self.let_stmt(stmt),
+            Keyword::Gosub => self.gosub_stmt(stmt),
             Keyword::Return => self.return_stmt(),
             Keyword::End => self.end_stmt(),
-            Keyword::Input => self.input_stmt(statement),
+            Keyword::Input => self.input_stmt(stmt),
         }
     }
 
@@ -136,12 +126,12 @@ impl<'a> Interpreter<'a> {
         Ok(())
     }
 
-    fn if_stmt(&mut self, line: &mut AsciiCharStream) -> result::Result<()> {
-        let lhs = self.expression(line)?;
-        let relop = line
+    fn if_stmt(&mut self, stmt: &mut AsciiCharStream) -> result::Result<()> {
+        let lhs = self.expression(stmt)?;
+        let relop = stmt
             .consume_relop()
             .ok_or(TinyBasicError::ExpectedRelationalOperator)?;
-        let rhs = self.expression(line)?;
+        let rhs = self.expression(stmt)?;
 
         let condition = match relop {
             super::char_stream::RelationalOperator::Less => lhs < rhs,
@@ -153,7 +143,7 @@ impl<'a> Interpreter<'a> {
         };
 
         if condition {
-            line
+            stmt
                 .consume_keyword()
                 .and_then(|keyword| {
                     match keyword {
@@ -162,46 +152,41 @@ impl<'a> Interpreter<'a> {
                     }
                 })
                 .ok_or(TinyBasicError::ExpectedKeyword)?;
-            self.statement(line)
+            self.statement(stmt)
         } else {
-            line.flush();
+            stmt.flush();
             Ok(())
         }
     }
 
-    fn goto_stmt(&mut self, line: &mut AsciiCharStream) -> result::Result<()> {
-        let next_line_index = self.expression(line)?;
-        self.next_line_to_execute = Some(CurrentLine::LineIndex(next_line_index));
+    fn goto_stmt(&mut self, stmt: &mut AsciiCharStream) -> result::Result<()> {
+        let next_line_index = self.expression(stmt)?;
+        self.next_line_to_execute = Some(next_line_index);
         Ok(())
     }
 
-    fn let_stmt(&mut self, line: &mut AsciiCharStream) -> result::Result<()> {
+    fn let_stmt(&mut self, stmt: &mut AsciiCharStream) -> result::Result<()> {
         let var_name = 
-            line
+            stmt
             .consume_var()
             .ok_or(TinyBasicError::ExpectedVariableName)?.to_owned();
-        line
+        stmt
             .consume_char(AsciiChar::Equal)
             .ok_or(TinyBasicError::Expected('='))?;
-        let value = self.expression(line)?;
+        let value = self.expression(stmt)?;
         self.environment.insert(var_name, value);
         Ok(())
     }
 
-    fn gosub_stmt(&mut self, line: &mut AsciiCharStream) -> result::Result<()> {
-        let subroutine_address = self.expression(line)?;
+    fn gosub_stmt(&mut self, stmt: &mut AsciiCharStream) -> result::Result<()> {
+        let subroutine_address = self.expression(stmt)?;
         let current_line_index = 
             self.next_line_to_execute
-            .ok_or(TinyBasicError::GosubCannotBeUsedInInteractiveMode)?;
+            .ok_or(TinyBasicError::CommandNotUsableInInteractiveMode)?;
 
-        match current_line_index {
-            CurrentLine::LineIndex(i) => {
-                self.return_stack.push(CurrentLine::LineIndex(i));
-                self.next_line_to_execute = Some(CurrentLine::LineIndex(subroutine_address));
-                Ok(())
-            },
-            CurrentLine::ReturnAddress(_) => unreachable!("Current line must always be LineIndex"),
-        }
+        self.return_stack.push(current_line_index);
+        self.next_line_to_execute = Some(subroutine_address);
+        Ok(())
     }
 
     fn return_stmt(&mut self) -> result::Result<()> {
@@ -232,7 +217,7 @@ impl<'a> Interpreter<'a> {
         if let Some(number) = user_input.as_str().parse::<types::Number>().ok() {
             self.environment.insert(var_name.to_owned(), number);
         } else {
-            let first_char_code = *user_input.as_bytes().iter().nth(0).expect("Expected non-empty user input");
+            let first_char_code = *user_input.as_bytes().iter().nth(0).expect("User input should not be empty");
             self.environment.insert(var_name.to_owned(), first_char_code as types::Number);
         }
         Ok(())
@@ -253,9 +238,6 @@ impl<'a> Interpreter<'a> {
     }
 
     fn run_stmt(&mut self) -> result::Result<()> {
-        // Move lines into local variable to satisfy borrow checker
-        // Currently I have no idea how to guarantee that self.lines will no be mutated
-        // While the program is executed
         let execution_res = self.run_lines();
         self.next_line_to_execute = None;
         execution_res
@@ -264,27 +246,16 @@ impl<'a> Interpreter<'a> {
     fn run_lines(&mut self) -> result::Result<()> {
         match self.lines.get_first_line_index() {
             Some(index) => {
-                self.next_line_to_execute = Some(CurrentLine::LineIndex(index));
+                self.next_line_to_execute = Some(index);
             },
             None => return Ok(()),
         }
         
         while let Some(current_line) = self.next_line_to_execute {
-            match current_line {
-                CurrentLine::LineIndex(i) => {
-                    self.next_line_to_execute = self.lines
-                        .get_following_line_index(i)
-                        .and_then(|line_index| Some(CurrentLine::LineIndex(line_index)));
-                    if let Some(line) = self.lines.get_line(i) {
-                        self.run_line(&line)?;   
-                    }
-                }
-                CurrentLine::ReturnAddress(i) => {
-                    self.next_line_to_execute = self.lines
-                    .get_following_line_index(i)
-                    .and_then(|line_index| Some(CurrentLine::LineIndex(line_index)));
-                    continue;
-                },
+            self.next_line_to_execute = self.lines.get_following_line_index(current_line);
+
+            if let Some(line) = self.lines.get_line(current_line) {
+                self.run_line(&line)?;   
             }
         }
 
@@ -303,8 +274,8 @@ impl<'a> Interpreter<'a> {
         Ok(())
     }
 
-    fn expression(&self, line: &mut AsciiCharStream) -> result::Result<types::Number> {
-        let sign = line.consume_char_if(is_plus_or_minus);
+    fn expression(&self, stmt: &mut AsciiCharStream) -> result::Result<types::Number> {
+        let sign = stmt.consume_char_if(is_plus_or_minus);
         let sign: types::Number = match sign {
             Some(sign) => {
                 get_sign_value(sign)
@@ -312,19 +283,19 @@ impl<'a> Interpreter<'a> {
             None => 1,
         };
         
-        let mut total_term = sign * self.term(line)?;
-        while let Some(sign) = line.consume_char_if(is_plus_or_minus) {
+        let mut total_term = sign * self.term(stmt)?;
+        while let Some(sign) = stmt.consume_char_if(is_plus_or_minus) {
             let sign = get_sign_value(sign);
-            let other = self.term(line)?;
+            let other = self.term(stmt)?;
             total_term += sign * other;
         }
         Ok(total_term)
     }
 
-    fn term(&self, line: &mut AsciiCharStream) -> result::Result<types::Number> {
-        let mut total_factor = self.factor(line)?;
-        if let Some(op) = line.consume_char_if(is_slash_or_asterisk) {
-            let other = self.factor(line)?;
+    fn term(&self, stmt: &mut AsciiCharStream) -> result::Result<types::Number> {
+        let mut total_factor = self.factor(stmt)?;
+        if let Some(op) = stmt.consume_char_if(is_slash_or_asterisk) {
+            let other = self.factor(stmt)?;
             match op {
                 ascii::AsciiChar::Slash => total_factor /= other,
                 ascii::AsciiChar::Asterisk => total_factor *= other,
@@ -334,18 +305,18 @@ impl<'a> Interpreter<'a> {
         Ok(total_factor)
     }
 
-    fn factor(&self, line: &mut AsciiCharStream) -> result::Result<types::Number>  {
-        if let Some(var_name) = line.consume_var() {
+    fn factor(&self, stmt: &mut AsciiCharStream) -> result::Result<types::Number>  {
+        if let Some(var_name) = stmt.consume_var() {
             Ok(self.environment
                 .get(var_name)
                 .cloned()
                 .unwrap_or(0))
-        } else if let Some(number) = line.consume_number() {
+        } else if let Some(number) = stmt.consume_number() {
             let number: types::Number = number.as_str().parse()?;
             Ok(number)
-        } else if line.consume_char(AsciiChar::ParenOpen).is_some() {
-            let expr_value = self.expression(line)?;
-            line
+        } else if stmt.consume_char(AsciiChar::ParenOpen).is_some() {
+            let expr_value = self.expression(stmt)?;
+            stmt
                 .consume_char(AsciiChar::ParenClose)
                 .ok_or(TinyBasicError::Expected(')'))?;
             Ok(expr_value)
