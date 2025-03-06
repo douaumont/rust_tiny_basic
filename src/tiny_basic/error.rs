@@ -16,40 +16,118 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-use ascii::AsciiStr;
+use std::cell::OnceCell;
+
+use ascii::{AsciiStr, AsciiString};
 
 use crate::tiny_basic::char_stream::AsciiCharStream;
 use crate::tiny_basic::types;
 
 #[derive(Debug)]
-pub struct Error<'a> {
+pub struct Error {
     line_number: Option<types::Number>,
-    context: &'a AsciiStr,
+    context: OnceCell<AsciiString>,
     location: usize,
     kind: ErrorKind
 }
 
-impl<'a> Error<'a> {
-    pub fn from(context: &'a AsciiCharStream, kind: ErrorKind, line_number: Option<types::Number>) -> Self {
+impl Error {
+    pub fn from_context(context: &AsciiCharStream, kind: ErrorKind, line_number: Option<types::Number>) -> Self {
         Self {
             line_number: line_number,
-            context: context.get_stream(),
+            context: OnceCell::from(context.get_stream().to_owned()),
             location: context.get_location(),
             kind: kind
         }
+    }
+
+    pub fn set_context(mut self, context: &AsciiCharStream) -> Self {
+        self.context.set(context.get_stream().to_owned());
+        self.location = context.get_location();
+        self
+    }
+}
+
+impl From<ErrorKind> for Error {
+    fn from(value: ErrorKind) -> Self {
+        Self {
+            line_number: None,
+            context: OnceCell::new(),
+            location: 0,
+            kind: value
+        }
+    }
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Error: {}", self.kind)?;
+        writeln!(f)?;
+        let error_location = match self.line_number {
+            Some(i) => {
+                write!(f, "{} ", i)?;
+                // The length of the line number in digits 
+                // (which is its log10 + 1) and the space char
+                i.checked_ilog10().expect("Line number should be greater than zero") + 1 + 1
+            },
+            None => 0,
+        } as usize + self.location;
+        let context = self.context.get().expect("Error context should be set");
+        let context_length = context.len();
+
+        writeln!(f, "{}", context)?;
+
+        for _ in 0..error_location {
+            write!(f, " ")?;
+        }
+        
+        const UNDERSCORING_CHAR: char = '^';
+
+        if error_location < context_length {
+            for _ in error_location..context_length {
+                write!(f, "{}", UNDERSCORING_CHAR)?;
+            }
+        } else {
+            for _ in context_length..(context_length + 3) {
+                write!(f, "{}", UNDERSCORING_CHAR)?
+            }
+        }
+
+        Ok(())
+    }
+}
+
+// Not really tests, it's just easier for me to see how the errors are printed
+#[cfg(test)]
+mod error_test {
+    use ascii::AsAsciiStr;
+    use crate::tiny_basic::char_stream::AsciiCharStream;
+
+    #[test]
+    fn test_error_formatting() {
+        let mut ctx = AsciiCharStream::from_ascii_str("PRINT 2 +".as_ascii_str().unwrap());
+        ctx.consume_keyword();
+        let error = super::Error::from_context(&ctx, super::ErrorKind::ExpectedKeyword, None);
+        println!("{}", error);
+    }
+
+    #[test]
+    fn test_error_formatting_on_empty_with_line_lumber() {
+        let mut ctx = AsciiCharStream::from_ascii_str("PRINT VAR".as_ascii_str().unwrap());
+        ctx.consume_keyword();
+        ctx.consume_var();
+        let error = super::Error::from_context(&ctx, super::ErrorKind::ExpectedKeyword, Some(123));
+        println!("{}", error);
     }
 }
 
 #[derive(Debug)]
 pub enum ErrorKind {
-    UnrecognisedKeyword,
     Expected(char),
     ExpectedKeyword,
-    ExpectedStringOrExpression,
     UnexpectedOperator,
-    NumberCouldNotBeParsed,
     FactorCouldNotBeParsed,
-    ExpectedEndOfLine,
+    UnexpectedTokensAtEndOfLine,
     ExpectedRelationalOperator,
     UnexpectedKeyword,
     ExpectedVariableName,
@@ -75,22 +153,19 @@ impl From<ascii::AsAsciiStrError> for ErrorKind {
 impl std::fmt::Display for ErrorKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ErrorKind::UnrecognisedKeyword => todo!(),
-            ErrorKind::Expected(c) => write!(f, "Expected '{}'", c),
-            ErrorKind::ExpectedKeyword => todo!(),
-            ErrorKind::ExpectedStringOrExpression => todo!(),
-            ErrorKind::UnexpectedOperator => todo!(),
-            ErrorKind::NumberCouldNotBeParsed => todo!(),
-            ErrorKind::FactorCouldNotBeParsed => todo!(),
-            ErrorKind::ExpectedEndOfLine => todo!(),
-            ErrorKind::ExpectedRelationalOperator => todo!(),
-            ErrorKind::UnexpectedKeyword => todo!(),
-            ErrorKind::ExpectedVariableName => todo!(),
-            ErrorKind::NumberParseError(int_error_kind) => todo!(),
-            ErrorKind::CommandNotUsableInInteractiveMode => todo!(),
-            ErrorKind::ReturnOnEmptyStack => todo!(),
-            ErrorKind::ExecutionReachedEnd => todo!(),
-            ErrorKind::ExpectedAsciiInput => todo!(),
+            ErrorKind::Expected(c) => write!(f, "Expected {}", c),
+            ErrorKind::ExpectedKeyword => write!(f, "Expected keyword"),
+            ErrorKind::UnexpectedOperator => write!(f, "Unexpected operator"),
+            ErrorKind::FactorCouldNotBeParsed => write!(f, "Factor could not be parsed"),
+            ErrorKind::UnexpectedTokensAtEndOfLine => write!(f, "Unexpected tokens at the end of line"),
+            ErrorKind::ExpectedRelationalOperator => write!(f, "Expected relational operator"),
+            ErrorKind::UnexpectedKeyword => write!(f, "Unexpected keyword"),
+            ErrorKind::ExpectedVariableName => write!(f, "Expected variable name"),
+            ErrorKind::NumberParseError(_) => write!(f, "Number could not be parsed"),
+            ErrorKind::CommandNotUsableInInteractiveMode => write!(f, "This command is not intended to be used in interactive mode"),
+            ErrorKind::ReturnOnEmptyStack => write!(f, "Attempt to RETURN while the return stack is empty"),
+            ErrorKind::ExecutionReachedEnd => unreachable!("Should not display ExecutionReachedEnd"),
+            ErrorKind::ExpectedAsciiInput => write!(f, "All input is expected to be ASCII-only"),
         }
     }
 }

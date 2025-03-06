@@ -18,13 +18,15 @@
 
 use std::io::{stdin, stdout, Write};
 use std::collections::HashMap;
+use std::marker::PhantomData;
+use std::ops::Deref;
 
 use ascii::{AsAsciiStr, AsciiChar, AsciiStr, AsciiString};
 
 use crate::tiny_basic::result;
 use crate::tiny_basic::code_line;
 use crate::tiny_basic::types;
-use crate::tiny_basic::error::{ErrorKind as TinyBasicError, Error};
+use crate::tiny_basic::error::{Error as TinyBasicError, ErrorKind as TinyBasicErrorKind};
 use crate::tiny_basic::program_storage::ProgramStorage;
 
 
@@ -35,33 +37,34 @@ use crate::tiny_basic::char_stream::Keyword;
 type Environment = HashMap<AsciiString, types::Number>;
 type ReturnStack = Vec<types::Number>;
 
-pub struct Interpreter<'a> {
-    lines: ProgramStorage<'a>,
+pub struct Interpreter {
+    lines: ProgramStorage,
     next_line_to_execute: Option<types::Number>,
+    current_line_number: Option<types::Number>,
     environment: Environment,
     return_stack: ReturnStack
 }
 
-impl<'a> Interpreter<'a> {
+impl Interpreter {
     pub fn new() -> Self {
         Interpreter {
             lines: ProgramStorage::new(),
             environment: Environment::new(),
             next_line_to_execute: None,
+            current_line_number: None,
             return_stack: ReturnStack::new()
         }
     }
 
     pub fn execute(&mut self, line: &AsciiStr) -> result::Result<()> {
-        let line = 
-            code_line::Line::try_from(line.trim())?;
+        let line = code_line::Line::try_from(line.trim())?;
 
         match line.index {
             Some(i) => {
                 if line.statement.is_empty() {
                     self.erase_line(i);
                 } else {
-                    self.lines.insert_line(i, line.statement.to_owned());
+                    self.lines.insert_line(i, line.statement);
                 }
             },
             None => self.run_line(line.statement)?
@@ -77,16 +80,19 @@ impl<'a> Interpreter<'a> {
     fn run_line(&mut self, line: &AsciiStr) -> result::Result<()> {
         let mut line = AsciiCharStream::from_ascii_str(line);
 
-        self.statement(&mut line)?;
+        self.statement(&mut line).map_err(|error| error.set_context(&line))?;
 
         match line.is_empty() {
             true => Ok(()),
-            false => Err(TinyBasicError::ExpectedEndOfLine)
+            false => Err(TinyBasicError::from_context(&line, TinyBasicErrorKind::UnexpectedTokensAtEndOfLine, self.current_line_number))
         }
     }
 
     fn statement(&mut self, stmt: &mut AsciiCharStream) -> result::Result<()> {
-        let keyword = stmt.consume_keyword().ok_or(TinyBasicError::ExpectedKeyword)?;
+        let keyword = 
+            stmt
+            .consume_keyword()
+            .ok_or(TinyBasicError::from_context(stmt, TinyBasicErrorKind::ExpectedKeyword, self.current_line_number))?;
 
         match keyword {
             Keyword::Print => self.print_stmt(stmt),
@@ -95,7 +101,7 @@ impl<'a> Interpreter<'a> {
             Keyword::List => self.list_stmt(),
             Keyword::Clear => self.clear_stmt(),
             Keyword::Goto => self.goto_stmt(stmt),
-            Keyword::Then => Err(TinyBasicError::UnexpectedKeyword),
+            Keyword::Then => Err(TinyBasicError::from_context(stmt, TinyBasicErrorKind::UnexpectedKeyword, self.current_line_number)),
             Keyword::Let => self.let_stmt(stmt),
             Keyword::Gosub => self.gosub_stmt(stmt),
             Keyword::Return => self.return_stmt(),
@@ -130,7 +136,7 @@ impl<'a> Interpreter<'a> {
         let lhs = self.expression(stmt)?;
         let relop = stmt
             .consume_relop()
-            .ok_or(TinyBasicError::ExpectedRelationalOperator)?;
+            .ok_or(TinyBasicError::from_context(stmt, TinyBasicErrorKind::ExpectedRelationalOperator, self.current_line_number))?;
         let rhs = self.expression(stmt)?;
 
         let condition = match relop {
@@ -151,7 +157,7 @@ impl<'a> Interpreter<'a> {
                         _ => None
                     }
                 })
-                .ok_or(TinyBasicError::ExpectedKeyword)?;
+                .ok_or(TinyBasicError::from_context(stmt, TinyBasicErrorKind::ExpectedKeyword, self.current_line_number))?;
             self.statement(stmt)
         } else {
             stmt.flush();
@@ -168,11 +174,16 @@ impl<'a> Interpreter<'a> {
     fn let_stmt(&mut self, stmt: &mut AsciiCharStream) -> result::Result<()> {
         let var_name = 
             stmt
-            .consume_var()
-            .ok_or(TinyBasicError::ExpectedVariableName)?.to_owned();
+            .consume_var();
+
+        if var_name.is_none() {
+            return Err(TinyBasicError::from_context(stmt, TinyBasicErrorKind::ExpectedVariableName, self.current_line_number));
+        }
+        let var_name = var_name.unwrap().to_owned();
+
         stmt
             .consume_char(AsciiChar::Equal)
-            .ok_or(TinyBasicError::Expected('='))?;
+            .ok_or(TinyBasicError::from_context(stmt, TinyBasicErrorKind::Expected('='), self.current_line_number))?;
         let value = self.expression(stmt)?;
         self.environment.insert(var_name, value);
         Ok(())
@@ -180,11 +191,11 @@ impl<'a> Interpreter<'a> {
 
     fn gosub_stmt(&mut self, stmt: &mut AsciiCharStream) -> result::Result<()> {
         let subroutine_address = self.expression(stmt)?;
-        let current_line_index = 
+        let return_address = 
             self.next_line_to_execute
-            .ok_or(TinyBasicError::CommandNotUsableInInteractiveMode)?;
+            .ok_or(TinyBasicError::from_context(stmt, TinyBasicErrorKind::CommandNotUsableInInteractiveMode, self.current_line_number))?;
 
-        self.return_stack.push(current_line_index);
+        self.return_stack.push(return_address);
         self.next_line_to_execute = Some(subroutine_address);
         Ok(())
     }
@@ -193,7 +204,7 @@ impl<'a> Interpreter<'a> {
         let return_address = self
             .return_stack
             .pop()
-            .ok_or(TinyBasicError::ReturnOnEmptyStack)?;
+            .ok_or(TinyBasicError::from( TinyBasicErrorKind::ReturnOnEmptyStack))?;
         self.next_line_to_execute = Some(return_address);
         Ok(())
     }
@@ -207,9 +218,12 @@ impl<'a> Interpreter<'a> {
     }
 
     fn input_var(&mut self,  var_list: &mut AsciiCharStream) -> result::Result<()> {
-        let var_name = var_list
-            .consume_var()
-            .ok_or(TinyBasicError::ExpectedVariableName)?;
+        let var_name = var_list.consume_var();
+
+        if var_name.is_none() {
+            return Err(TinyBasicError::from_context(var_list, TinyBasicErrorKind::ExpectedVariableName, self.current_line_number));
+        }
+        let var_name = var_name.unwrap();
 
         print!("{}? ", var_name);
         stdout().flush();
@@ -230,16 +244,21 @@ impl<'a> Interpreter<'a> {
                 break;
             }
         }
-        Ok(user_input.trim().as_ascii_str()?.to_owned())
+        let user_input = user_input
+            .trim()
+            .as_ascii_str()
+            .map_err(|error| TinyBasicError::from(TinyBasicErrorKind::from(error)))?;
+        Ok(user_input.to_owned())
     }
 
     fn end_stmt(&mut self) -> result::Result<()> {
-        Err(TinyBasicError::ExecutionReachedEnd)
+        Err(TinyBasicError::from(TinyBasicErrorKind::ExecutionReachedEnd))
     }
 
     fn run_stmt(&mut self) -> result::Result<()> {
         let execution_res = self.run_lines();
         self.next_line_to_execute = None;
+        self.current_line_number = None;
         execution_res
     }
 
@@ -252,10 +271,11 @@ impl<'a> Interpreter<'a> {
         }
         
         while let Some(current_line) = self.next_line_to_execute {
+            self.current_line_number = Some(current_line);
             self.next_line_to_execute = self.lines.get_following_line_index(current_line);
 
             if let Some(line) = self.lines.get_line(current_line) {
-                self.run_line(&line)?;   
+                self.run_line(line.deref())?;
             }
         }
 
@@ -299,7 +319,7 @@ impl<'a> Interpreter<'a> {
             match op {
                 ascii::AsciiChar::Slash => total_factor /= other,
                 ascii::AsciiChar::Asterisk => total_factor *= other,
-                _ => return Err(TinyBasicError::UnexpectedOperator),
+                _ => return Err(TinyBasicError::from_context(stmt, TinyBasicErrorKind::UnexpectedOperator, self.current_line_number)),
             }
         }
         Ok(total_factor)
@@ -312,16 +332,20 @@ impl<'a> Interpreter<'a> {
                 .cloned()
                 .unwrap_or(0))
         } else if let Some(number) = stmt.consume_number() {
-            let number: types::Number = number.as_str().parse()?;
+            let number: types::Number = 
+                number
+                .as_str()
+                .parse()
+                .map_err(|error| TinyBasicError::from_context(stmt, TinyBasicErrorKind::from(error), self.current_line_number))?;
             Ok(number)
         } else if stmt.consume_char(AsciiChar::ParenOpen).is_some() {
             let expr_value = self.expression(stmt)?;
             stmt
                 .consume_char(AsciiChar::ParenClose)
-                .ok_or(TinyBasicError::Expected(')'))?;
+                .ok_or(TinyBasicError::from_context(stmt, TinyBasicErrorKind::Expected(')'), self.current_line_number))?;
             Ok(expr_value)
         } else {
-            Err(TinyBasicError::FactorCouldNotBeParsed)
+            Err(TinyBasicError::from_context(stmt, TinyBasicErrorKind::FactorCouldNotBeParsed, self.current_line_number))
         }
     }
 }

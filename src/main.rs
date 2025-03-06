@@ -41,7 +41,7 @@ fn repl() -> std::io::Result<()> {
             return Ok(());
         }
 
-        let line = match ascii::AsciiStr::from_ascii(line.as_bytes()) {
+        let line = match ascii::AsciiStr::from_ascii(&line) {
             Ok(line) => line,
             Err(_) => {
                 eprintln!("Current implementation requires all input to be ASCII-only");
@@ -52,7 +52,7 @@ fn repl() -> std::io::Result<()> {
         match interpreter.execute(line) {
             Ok(_) => println!("OK"),
             Err(error) => {
-                eprintln!("{:?}", error);
+                eprintln!("{}", error);
             },
         }
     }

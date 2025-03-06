@@ -46,7 +46,7 @@ pub enum RelationalOperator {
     Equal
 }
 
-#[derive(Default, Clone, PartialEq)]
+#[derive(Default, Clone, PartialEq, Copy)]
 struct StreamState {
     cur: usize
 }
@@ -58,7 +58,7 @@ impl StreamState {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct AsciiCharStream<'a> {
     stream: &'a AsciiStr,
     state: StreamState
