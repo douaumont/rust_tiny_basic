@@ -27,7 +27,7 @@ use crate::tiny_basic::types;
 pub struct Error {
     line_number: Option<types::Number>,
     context: OnceCell<AsciiString>,
-    location: usize,
+    location: OnceCell<usize>,
     kind: ErrorKind
 }
 
@@ -36,14 +36,18 @@ impl Error {
         Self {
             line_number: line_number,
             context: OnceCell::from(context.get_stream().to_owned()),
-            location: context.get_location(),
+            location: OnceCell::from(context.get_location()),
             kind: kind
         }
     }
 
-    pub fn set_context(mut self, context: &AsciiCharStream) -> Self {
+    pub fn set_context(self, context: &AsciiCharStream) -> Self {
         self.context.set(context.get_stream().to_owned());
-        self.location = context.get_location();
+        self
+    }
+
+    pub fn set_line_number(mut self, line_number: Option<types::Number>) -> Self {
+        self.line_number = line_number;
         self
     }
 }
@@ -53,7 +57,7 @@ impl From<ErrorKind> for Error {
         Self {
             line_number: None,
             context: OnceCell::new(),
-            location: 0,
+            location: OnceCell::new(),
             kind: value
         }
     }
@@ -71,9 +75,9 @@ impl std::fmt::Display for Error {
                 i.checked_ilog10().expect("Line number should be greater than zero") + 1 + 1
             },
             None => 0,
-        } as usize + self.location;
+        } as usize + self.location.get_or_init(|| 0);
         let context = self.context.get().expect("Error context should be set");
-        let context_length = context.len();
+        let context_length = context.len() + error_location;
 
         writeln!(f, "{}", context)?;
 
@@ -101,15 +105,24 @@ impl std::fmt::Display for Error {
 #[cfg(test)]
 mod error_test {
     use ascii::AsAsciiStr;
-    use crate::tiny_basic::char_stream::AsciiCharStream;
+    use crate::tiny_basic::{char_stream::AsciiCharStream, error::ErrorKind};
 
     #[test]
-    fn test_error_formatting() {
+    fn test_error_formatting_1() {
         let mut ctx = AsciiCharStream::from_ascii_str("PRINT 2 +".as_ascii_str().unwrap());
         ctx.consume_keyword();
         let error = super::Error::from_context(&ctx, super::ErrorKind::ExpectedKeyword, None);
         println!("{}", error);
     }
+
+    #[test]
+    fn test_error_formatting_2() {
+        let mut ctx = AsciiCharStream::from_ascii_str("RETURN".as_ascii_str().unwrap());
+        ctx.consume_keyword();
+        let error = super::Error::from(ErrorKind::ReturnOnEmptyStack);
+        println!("{}", error.set_context(&ctx).set_line_number(Some(10)));
+    }
+
 
     #[test]
     fn test_error_formatting_on_empty_with_line_lumber() {
