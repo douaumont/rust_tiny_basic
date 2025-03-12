@@ -34,11 +34,12 @@ use crate::tiny_basic::char_stream::AsciiCharStream;
 
 use crate::tiny_basic::char_stream::Keyword;
 
+use super::char_stream::Statement;
+
 type Environment = HashMap<AsciiString, types::Number>;
 type ReturnStack = Vec<types::Number>;
 
 pub struct Interpreter {
-    lines: ProgramStorage,
     next_line_to_execute: Option<types::Number>,
     current_line_number: Option<types::Number>,
     environment: Environment,
@@ -48,7 +49,6 @@ pub struct Interpreter {
 impl Interpreter {
     pub fn new() -> Self {
         Interpreter {
-            lines: ProgramStorage::new(),
             environment: Environment::new(),
             next_line_to_execute: None,
             current_line_number: None,
@@ -56,57 +56,41 @@ impl Interpreter {
         }
     }
 
-    pub fn execute(&mut self, line: &AsciiStr) -> result::Result<()> {
-        let line = code_line::Line::try_from(line.trim())?;
-
-        match line.index {
-            Some(i) => {
-                if line.statement.is_empty() {
-                    self.erase_line(i);
-                } else {
-                    self.lines.insert_line(i, line.statement);
-                }
+    pub fn run(&mut self, program: &ProgramStorage) -> result::Result<()> {
+        match program.get_first_line_index() {
+            Some(index) => {
+                self.next_line_to_execute = Some(index);
             },
-            None => self.run_line(line.statement)?
+            None => return Ok(()),
         }
         
+        while let Some(current_line) = self.next_line_to_execute {
+            self.current_line_number = Some(current_line);
+            self.next_line_to_execute = program.get_following_line_index(current_line);
+
+            if let Some(line) = program.get_line(current_line) {
+                self.execute(&mut AsciiCharStream::from_ascii_str(line.deref()))?;
+            }
+        }
+
         Ok(())
     }
 
-    fn erase_line(&mut self, line_index: types::Number) {
-        self.lines.erase_line(line_index);
-    }
-
-    fn run_line(&mut self, line: &AsciiStr) -> result::Result<()> {
-        let mut line = AsciiCharStream::from_ascii_str(line);
-
-        self.statement(&mut line).map_err(|error| error.set_context(&line))?;
-
-        match line.is_empty() {
-            true => Ok(()),
-            false => Err(TinyBasicError::from_context(&line, TinyBasicErrorKind::UnexpectedTokensAtEndOfLine, self.current_line_number))
-        }
-    }
-
-    fn statement(&mut self, stmt: &mut AsciiCharStream) -> result::Result<()> {
-        let keyword = 
+    pub fn execute(&mut self, stmt: &mut AsciiCharStream) -> result::Result<()> {
+        let statement = 
             stmt
-            .consume_keyword()
-            .ok_or(TinyBasicError::from_context(stmt, TinyBasicErrorKind::ExpectedKeyword, self.current_line_number))?;
+            .consume_statement()
+            .ok_or(TinyBasicError::from_context(stmt, TinyBasicErrorKind::ExpectedStatement, self.current_line_number))?;
 
-        match keyword {
-            Keyword::Print => self.print_stmt(stmt),
-            Keyword::If => self.if_stmt(stmt),
-            Keyword::Run => self.run_stmt(),
-            Keyword::List => self.list_stmt(),
-            Keyword::Clear => self.clear_stmt(),
-            Keyword::Goto => self.goto_stmt(stmt),
-            Keyword::Then => Err(TinyBasicError::from_context(stmt, TinyBasicErrorKind::UnexpectedKeyword, self.current_line_number)),
-            Keyword::Let => self.let_stmt(stmt),
-            Keyword::Gosub => self.gosub_stmt(stmt),
-            Keyword::Return => self.return_stmt(),
-            Keyword::End => self.end_stmt(),
-            Keyword::Input => self.input_stmt(stmt),
+        match statement {
+            Statement::Print => self.print_stmt(stmt),
+            Statement::If => self.if_stmt(stmt),
+            Statement::Goto => self.goto_stmt(stmt),
+            Statement::Let => self.let_stmt(stmt),
+            Statement::Gosub => self.gosub_stmt(stmt),
+            Statement::Return => self.return_stmt(),
+            Statement::End => self.end_stmt(),
+            Statement::Input => self.input_stmt(stmt),
         }
     }
 
@@ -158,7 +142,7 @@ impl Interpreter {
                     }
                 })
                 .ok_or(TinyBasicError::from_context(stmt, TinyBasicErrorKind::ExpectedKeyword, self.current_line_number))?;
-            self.statement(stmt)
+            self.execute(stmt)
         } else {
             stmt.flush();
             Ok(())
@@ -253,45 +237,6 @@ impl Interpreter {
 
     fn end_stmt(&mut self) -> result::Result<()> {
         Err(TinyBasicError::from(TinyBasicErrorKind::ExecutionReachedEnd))
-    }
-
-    fn run_stmt(&mut self) -> result::Result<()> {
-        let execution_res = self.run_lines();
-        self.next_line_to_execute = None;
-        self.current_line_number = None;
-        execution_res
-    }
-
-    fn run_lines(&mut self) -> result::Result<()> {
-        match self.lines.get_first_line_index() {
-            Some(index) => {
-                self.next_line_to_execute = Some(index);
-            },
-            None => return Ok(()),
-        }
-        
-        while let Some(current_line) = self.next_line_to_execute {
-            self.current_line_number = Some(current_line);
-            self.next_line_to_execute = self.lines.get_following_line_index(current_line);
-
-            if let Some(line) = self.lines.get_line(current_line) {
-                self.run_line(line.deref())?;
-            }
-        }
-
-        Ok(())
-    }
-
-    fn list_stmt(&self) -> result::Result<()> {
-        for (i, line) in self.lines.iter() {
-            println!("{} {}", i, line);
-        }
-        Ok(())
-    }
-
-    fn clear_stmt(&mut self) -> result::Result<()> {
-        self.lines.clear();
-        Ok(())
     }
 
     fn expression(&self, stmt: &mut AsciiCharStream) -> result::Result<types::Number> {

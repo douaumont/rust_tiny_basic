@@ -148,7 +148,9 @@ pub enum ErrorKind {
     CommandNotUsableInInteractiveMode,
     ReturnOnEmptyStack,
     ExecutionReachedEnd,
-    ExpectedAsciiInput
+    ExpectedAsciiInput,
+    ExpectedStatement,
+    ExpectedCommand
 }
 
 impl From<std::num::ParseIntError> for ErrorKind {
@@ -179,6 +181,8 @@ impl std::fmt::Display for ErrorKind {
             ErrorKind::ReturnOnEmptyStack => write!(f, "Attempt to RETURN while the return stack is empty"),
             ErrorKind::ExecutionReachedEnd => unreachable!("Should not display ExecutionReachedEnd"),
             ErrorKind::ExpectedAsciiInput => write!(f, "All input is expected to be ASCII-only"),
+            ErrorKind::ExpectedStatement => write!(f, "Expected statement"),
+            ErrorKind::ExpectedCommand => write!(f, "Expected command"),
         }
     }
 }

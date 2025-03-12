@@ -16,10 +16,10 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-mod code_line;
-mod error;
-mod types;
-mod char_stream;
-mod program_storage;
+pub mod code_line;
+pub mod error;
+pub mod types;
+pub mod char_stream;
+pub mod program_storage;
 pub mod result;
 pub mod interpreter;

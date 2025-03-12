@@ -35,6 +35,23 @@ pub enum Keyword {
     Input
 }
 
+pub enum Statement {
+    Let,
+    Print,
+    End,
+    Goto,
+    If,
+    Gosub,
+    Return,
+    Input
+}
+
+pub enum Command {
+    Run,
+    List,
+    Clear,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 
 pub enum RelationalOperator {
@@ -154,6 +171,40 @@ impl<'a> AsciiCharStream<'a> {
                 "INPUT" => Some(Keyword::Input),
                 _ => None
             }
+        }
+    }
+
+    pub fn consume_statement(&mut self) -> Option<Statement> {
+        match self.consume_keyword()? {
+            Keyword::Print => Some(Statement::Print),
+            Keyword::If => Some(Statement::If),
+            Keyword::Then => None,
+            Keyword::Run => None,
+            Keyword::List => None,
+            Keyword::Clear => None,
+            Keyword::Goto => Some(Statement::Goto),
+            Keyword::Let => Some(Statement::Let),
+            Keyword::Gosub => Some(Statement::Gosub),
+            Keyword::Return => Some(Statement::Return),
+            Keyword::End => Some(Statement::End),
+            Keyword::Input => Some(Statement::Input),
+        }
+    }
+
+    pub fn consume_command(&mut self) -> Option<Command> {
+        match self.consume_keyword()? {
+            Keyword::Print => None,
+            Keyword::If => None,
+            Keyword::Then => None,
+            Keyword::Run => Some(Command::Run),
+            Keyword::List => Some(Command::List),
+            Keyword::Clear => Some(Command::Clear),
+            Keyword::Goto => None,
+            Keyword::Let => None,
+            Keyword::Gosub => None,
+            Keyword::Return => None,
+            Keyword::End => None,
+            Keyword::Input => None,
         }
     }
 
