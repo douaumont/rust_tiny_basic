@@ -50,6 +50,10 @@ impl Error {
         self.line_number = line_number;
         self
     }
+
+    pub fn get_kind(&self) -> ErrorKind {
+        self.kind.clone()
+    }
 }
 
 impl From<ErrorKind> for Error {
@@ -134,7 +138,7 @@ mod error_test {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ErrorKind {
     Expected(char),
     ExpectedKeyword,

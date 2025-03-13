@@ -23,3 +23,4 @@ pub mod char_stream;
 pub mod program_storage;
 pub mod result;
 pub mod interpreter;
+pub mod repl;

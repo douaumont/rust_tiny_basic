@@ -18,13 +18,11 @@
 
 use std::io::{stdin, stdout, Write};
 use std::collections::HashMap;
-use std::marker::PhantomData;
 use std::ops::Deref;
 
 use ascii::{AsAsciiStr, AsciiChar, AsciiStr, AsciiString};
 
 use crate::tiny_basic::result;
-use crate::tiny_basic::code_line;
 use crate::tiny_basic::types;
 use crate::tiny_basic::error::{Error as TinyBasicError, ErrorKind as TinyBasicErrorKind};
 use crate::tiny_basic::program_storage::ProgramStorage;
@@ -91,7 +89,12 @@ impl Interpreter {
             Statement::Return => self.return_stmt(),
             Statement::End => self.end_stmt(),
             Statement::Input => self.input_stmt(stmt),
-        }
+        }.or_else(|error| {
+            match error.get_kind() {
+                TinyBasicErrorKind::ExecutionReachedEnd => Ok(()),
+                _ => Err(error)
+            }
+        })
     }
 
     fn print_stmt(&mut self, expr_list: &mut AsciiCharStream) -> result::Result<()> {
