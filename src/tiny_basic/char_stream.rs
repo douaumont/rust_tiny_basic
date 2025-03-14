@@ -19,6 +19,8 @@
 
 use ascii::{AsAsciiStr, AsciiChar, AsciiStr};
 
+use crate::tiny_basic::{result, error::{Error, ErrorKind}};
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum Keyword {
     Print,
@@ -208,9 +210,9 @@ impl<'a> AsciiCharStream<'a> {
         }
     }
 
-    pub fn consume_string(&mut self) -> Option<&AsciiStr> {
+    pub fn consume_string(&mut self) ->  result::Result<'a, Option<&'a AsciiStr>> {
         if self.consume_char(AsciiChar::Quotation).is_none() {
-            return None;
+            return Ok(None);
         }
 
         let mut string_end = self.clone();
@@ -220,10 +222,12 @@ impl<'a> AsciiCharStream<'a> {
         });
 
         let string = &self.stream[self.state.cur..string_end.state.cur];
-        string_end.consume_char(AsciiChar::Quotation).expect("Quotation expected at the end of the string");
+        string_end
+            .consume_char(AsciiChar::Quotation)
+            .ok_or(Error::from_context(&string_end, ErrorKind::Expected('"'), None))?;
         *self = string_end.clone();
         self.trim_start();
-        Some(string)
+        Ok(Some(string))
     }
 
     pub fn consume_var(&mut self) -> Option<&AsciiStr> {
@@ -331,14 +335,14 @@ mod tests {
         {
             let mut stream = AsciiCharStream::from_ascii_str(ascii::AsciiStr::from_ascii(b"PRINT \"Hello world\"").unwrap());
             assert_eq!(stream.consume_keyword().unwrap(), Keyword::Print);
-            assert_eq!(stream.consume_string().unwrap().as_str(), "Hello world");
+            assert_eq!(stream.consume_string().unwrap().unwrap().as_str(), "Hello world");
             assert!(stream.is_empty());
         }
 
         {
             let mut stream = AsciiCharStream::from_ascii_str(ascii::AsciiStr::from_ascii(b"PRINT \"\"").unwrap());
             assert_eq!(stream.consume_keyword().unwrap(), Keyword::Print);
-            assert_eq!(stream.consume_string().unwrap().as_str(), "");
+            assert_eq!(stream.consume_string().unwrap().unwrap().as_str(), "");
         }
     }
 

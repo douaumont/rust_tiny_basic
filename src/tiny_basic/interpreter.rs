@@ -18,9 +18,8 @@
 
 use std::io::{stdin, stdout, Write};
 use std::collections::HashMap;
-use std::ops::Deref;
 
-use ascii::{AsAsciiStr, AsciiChar, AsciiStr, AsciiString};
+use ascii::{AsAsciiStr, AsciiChar, AsciiString};
 
 use crate::tiny_basic::result;
 use crate::tiny_basic::types;
@@ -44,7 +43,7 @@ pub struct Interpreter {
     return_stack: ReturnStack
 }
 
-impl Interpreter {
+impl<'line_source> Interpreter {
     pub fn new() -> Self {
         Interpreter {
             environment: Environment::new(),
@@ -54,7 +53,7 @@ impl Interpreter {
         }
     }
 
-    pub fn run(&mut self, program: &ProgramStorage) -> result::Result<()> {
+    pub fn run(&mut self, program: &'line_source ProgramStorage) -> result::Result<'line_source, ()> {
         match program.get_first_line_index() {
             Some(index) => {
                 self.next_line_to_execute = Some(index);
@@ -67,14 +66,14 @@ impl Interpreter {
             self.next_line_to_execute = program.get_following_line_index(current_line);
 
             if let Some(line) = program.get_line(current_line) {
-                self.execute(&mut AsciiCharStream::from_ascii_str(line.deref()))?;
+                self.execute(&mut AsciiCharStream::from_ascii_str(line))?;
             }
         }
 
         Ok(())
     }
 
-    pub fn execute(&mut self, stmt: &mut AsciiCharStream) -> result::Result<()> {
+    pub fn execute(&mut self, stmt: &mut AsciiCharStream<'line_source>) -> result::Result<'line_source, ()> {
         let statement = 
             stmt
             .consume_statement()
@@ -97,8 +96,8 @@ impl Interpreter {
         })
     }
 
-    fn print_stmt(&mut self, expr_list: &mut AsciiCharStream) -> result::Result<()> {
-        if let Some(string) = expr_list.consume_string() {
+    fn print_stmt(&mut self, expr_list: &mut AsciiCharStream<'line_source>) -> result::Result<'line_source, ()> {
+        if let Some(string) = expr_list.consume_string()? {
             print!("{} ", string);
         } else {
             let expr_value = self.expression(expr_list)?;
@@ -106,7 +105,7 @@ impl Interpreter {
         }
 
         while expr_list.consume_char(ascii::AsciiChar::Comma).is_some() {
-            if let Some(string) = expr_list.consume_string() {
+            if let Some(string) = expr_list.consume_string()? {
                 print!("{} ", string);
             } else {
                 let expr_value = self.expression(expr_list)?;
@@ -119,7 +118,7 @@ impl Interpreter {
         Ok(())
     }
 
-    fn if_stmt(&mut self, stmt: &mut AsciiCharStream) -> result::Result<()> {
+    fn if_stmt(&mut self, stmt: &mut AsciiCharStream<'line_source>) -> result::Result<'line_source, ()> {
         let lhs = self.expression(stmt)?;
         let relop = stmt
             .consume_relop()
@@ -152,13 +151,13 @@ impl Interpreter {
         }
     }
 
-    fn goto_stmt(&mut self, stmt: &mut AsciiCharStream) -> result::Result<()> {
+    fn goto_stmt(&mut self, stmt: &mut AsciiCharStream<'line_source>) -> result::Result<'line_source, ()> {
         let next_line_index = self.expression(stmt)?;
         self.next_line_to_execute = Some(next_line_index);
         Ok(())
     }
 
-    fn let_stmt(&mut self, stmt: &mut AsciiCharStream) -> result::Result<()> {
+    fn let_stmt(&mut self, stmt: &mut AsciiCharStream<'line_source>) -> result::Result<'line_source, ()> {
         let var_name = 
             stmt
             .consume_var();
@@ -176,7 +175,7 @@ impl Interpreter {
         Ok(())
     }
 
-    fn gosub_stmt(&mut self, stmt: &mut AsciiCharStream) -> result::Result<()> {
+    fn gosub_stmt(&mut self, stmt: &mut AsciiCharStream<'line_source>) -> result::Result<'line_source, ()> {
         let subroutine_address = self.expression(stmt)?;
         let return_address = 
             self.next_line_to_execute
@@ -187,7 +186,7 @@ impl Interpreter {
         Ok(())
     }
 
-    fn return_stmt(&mut self) -> result::Result<()> {
+    fn return_stmt(&mut self) -> result::Result<'line_source, ()> {
         let return_address = self
             .return_stack
             .pop()
@@ -196,7 +195,7 @@ impl Interpreter {
         Ok(())
     }
 
-    fn input_stmt(&mut self, var_list: &mut AsciiCharStream) -> result::Result<()> {
+    fn input_stmt(&mut self, var_list: &mut AsciiCharStream<'line_source>) -> result::Result<'line_source, ()> {
         self.input_var(var_list)?;
         while var_list.consume_char(AsciiChar::Comma).is_some() {
             self.input_var(var_list)?;
@@ -204,7 +203,7 @@ impl Interpreter {
         Ok(())
     }
 
-    fn input_var(&mut self,  var_list: &mut AsciiCharStream) -> result::Result<()> {
+    fn input_var(&mut self,  var_list: &mut AsciiCharStream<'line_source>) -> result::Result<'line_source, ()> {
         let var_name = var_list.consume_var();
 
         if var_name.is_none() {
@@ -224,7 +223,7 @@ impl Interpreter {
         Ok(())
     } 
 
-    fn get_user_input() -> result::Result<AsciiString> {
+    fn get_user_input() -> result::Result<'line_source, AsciiString> {
         let mut user_input = String::new();
         while let Ok(read_bytes) = stdin().read_line(&mut user_input) {
             if read_bytes > 0 {
@@ -238,11 +237,11 @@ impl Interpreter {
         Ok(user_input.to_owned())
     }
 
-    fn end_stmt(&mut self) -> result::Result<()> {
+    fn end_stmt(&mut self) -> result::Result<'line_source, ()> {
         Err(TinyBasicError::from(TinyBasicErrorKind::ExecutionReachedEnd))
     }
 
-    fn expression(&self, stmt: &mut AsciiCharStream) -> result::Result<types::Number> {
+    fn expression(&self, stmt: &mut AsciiCharStream<'line_source>) -> result::Result<'line_source, types::Number> {
         let sign = stmt.consume_char_if(is_plus_or_minus);
         let sign: types::Number = match sign {
             Some(sign) => {
@@ -260,7 +259,7 @@ impl Interpreter {
         Ok(total_term)
     }
 
-    fn term(&self, stmt: &mut AsciiCharStream) -> result::Result<types::Number> {
+    fn term(&self, stmt: &mut AsciiCharStream<'line_source>) -> result::Result<'line_source, types::Number> {
         let mut total_factor = self.factor(stmt)?;
         if let Some(op) = stmt.consume_char_if(is_slash_or_asterisk) {
             let other = self.factor(stmt)?;
@@ -273,7 +272,7 @@ impl Interpreter {
         Ok(total_factor)
     }
 
-    fn factor(&self, stmt: &mut AsciiCharStream) -> result::Result<types::Number>  {
+    fn factor(&self, stmt: &mut AsciiCharStream<'line_source>) -> result::Result<'line_source, types::Number>  {
         if let Some(var_name) = stmt.consume_var() {
             Ok(self.environment
                 .get(var_name)

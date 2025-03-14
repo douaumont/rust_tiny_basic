@@ -24,6 +24,7 @@ use crate::tiny_basic::{
     char_stream,
     program_storage::ProgramStorage,
     types,
+    result
 };
 
 use std::io::stdin;
@@ -46,7 +47,7 @@ macro_rules! show_outcome {
             Ok(_) => println!("OK"),
             Err(error) => {
                 eprintln!("{}", error);
-                return;
+                continue;
             }
         }
     };
@@ -58,7 +59,7 @@ pub struct Repl {
     program: ProgramStorage
 }
 
-impl Repl {
+impl<'user_input> Repl {
     pub fn new() -> Self {
         Self {
             interpreter: Interpreter::new(),
@@ -77,30 +78,31 @@ impl Repl {
             let line = unwrap_or_continue!(ascii::AsciiStr::from_ascii(&line));
             let line = unwrap_or_continue!(Line::try_from(line.trim()));
     
-            match line.index {
+            show_outcome!(match line.index {
                 Some(i) => {
-                    self.insert_or_erase_line(i, line.statement);
+                    self.insert_or_erase_line(i, line.statement)
                 },
                 None => {
-                    self.process_line(line.statement);
+                    self.process_line(line.statement)
                 }
-            }
+            });
         }
     }
 
-    fn insert_or_erase_line(&mut self, index: types::Number, contents: &AsciiStr) {
+    fn insert_or_erase_line(&mut self, index: types::Number, contents: &'user_input AsciiStr) -> result::Result<'user_input, ()> {
         if contents.is_empty() {
             self.program.erase_line(index);
         } else {
             self.program.insert_line(index, contents);
         }
+        Ok(())
     }
 
-    fn process_line(&mut self, line: &AsciiStr) {
+    fn process_line(&'user_input mut self, line: &'user_input AsciiStr) -> result::Result<'user_input, ()> {
         let line = char_stream::AsciiCharStream::from_ascii_str(line);
         if let Some(command) = line.clone().consume_command() {
             match command {
-                char_stream::Command::Run => show_outcome!(self.interpreter.run(&self.program)),
+                char_stream::Command::Run => self.interpreter.run(&self.program)?,
                 char_stream::Command::List => {
                     for (i, line) in self.program.iter() {
                         println!("{} {}", i, line);
@@ -109,8 +111,9 @@ impl Repl {
                 char_stream::Command::Clear => self.program.clear(),
             }
         } else if let Some(_) = line.clone().consume_statement() {
-            show_outcome!(self.interpreter.execute(&mut line.clone()));
+            self.interpreter.execute(&mut line.clone())?;
         }
+        Ok(())
     }
 
     fn read_line() -> std::io::Result<Option<String>> {

@@ -24,25 +24,25 @@ use crate::tiny_basic::char_stream::AsciiCharStream;
 use crate::tiny_basic::types;
 
 #[derive(Debug)]
-pub struct Error {
+pub struct Error<'ctx> {
     line_number: Option<types::Number>,
-    context: OnceCell<AsciiString>,
+    context: OnceCell<&'ctx AsciiStr>,
     location: OnceCell<usize>,
     kind: ErrorKind
 }
 
-impl Error {
-    pub fn from_context(context: &AsciiCharStream, kind: ErrorKind, line_number: Option<types::Number>) -> Self {
+impl<'ctx> Error<'ctx> {
+    pub fn from_context(context: &AsciiCharStream<'ctx>, kind: ErrorKind, line_number: Option<types::Number>) -> Self {
         Self {
             line_number: line_number,
-            context: OnceCell::from(context.get_stream().to_owned()),
+            context: OnceCell::from(context.get_stream()),
             location: OnceCell::from(context.get_location()),
             kind: kind
         }
     }
 
-    pub fn set_context(self, context: &AsciiCharStream) -> Self {
-        self.context.set(context.get_stream().to_owned());
+    pub fn set_context(self, context: &AsciiCharStream<'ctx>) -> Self {
+        self.context.set(context.get_stream());
         self
     }
 
@@ -56,7 +56,7 @@ impl Error {
     }
 }
 
-impl From<ErrorKind> for Error {
+impl<'ctx> From<ErrorKind> for Error<'ctx> {
     fn from(value: ErrorKind) -> Self {
         Self {
             line_number: None,
@@ -67,7 +67,7 @@ impl From<ErrorKind> for Error {
     }
 }
 
-impl std::fmt::Display for Error {
+impl<'ctx> std::fmt::Display for Error<'ctx> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Error: {}", self.kind)?;
         writeln!(f)?;
