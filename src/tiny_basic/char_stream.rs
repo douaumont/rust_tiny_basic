@@ -19,7 +19,8 @@
 
 use ascii::{AsAsciiStr, AsciiChar, AsciiStr};
 
-use crate::tiny_basic::{result, error::{Error, ErrorKind}};
+use crate::tiny_basic;
+use crate::tiny_basic::error::{Error, ErrorKind};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Keyword {
@@ -210,7 +211,7 @@ impl<'a> AsciiCharStream<'a> {
         }
     }
 
-    pub fn consume_string(&mut self) ->  result::Result<'a, Option<&'a AsciiStr>> {
+    pub fn consume_string(&mut self) -> tiny_basic::Result<'a, Option<&'a AsciiStr>> {
         if self.consume_char(AsciiChar::Quotation).is_none() {
             return Ok(None);
         }

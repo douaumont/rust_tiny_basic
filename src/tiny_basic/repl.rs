@@ -23,9 +23,10 @@ use crate::tiny_basic::{
     code_line::Line, 
     char_stream,
     program_storage::ProgramStorage,
-    types,
-    result
+    types
 };
+
+use crate::tiny_basic;
 
 use std::io::stdin;
 
@@ -89,7 +90,7 @@ impl<'user_input> Repl {
         }
     }
 
-    fn insert_or_erase_line(&mut self, index: types::Number, contents: &'user_input AsciiStr) -> result::Result<'user_input, ()> {
+    fn insert_or_erase_line(&mut self, index: types::LineIndex, contents: &'user_input AsciiStr) -> tiny_basic::Result<'user_input, ()> {
         if contents.is_empty() {
             self.program.erase_line(index);
         } else {
@@ -98,7 +99,7 @@ impl<'user_input> Repl {
         Ok(())
     }
 
-    fn process_line(&'user_input mut self, line: &'user_input AsciiStr) -> result::Result<'user_input, ()> {
+    fn process_line(&'user_input mut self, line: &'user_input AsciiStr) -> tiny_basic::Result<'user_input, ()> {
         let line = char_stream::AsciiCharStream::from_ascii_str(line);
         if let Some(command) = line.clone().consume_command() {
             match command {

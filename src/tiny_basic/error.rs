@@ -18,21 +18,21 @@
 
 use std::cell::OnceCell;
 
-use ascii::{AsciiStr, AsciiString};
+use ascii::AsciiStr;
 
 use crate::tiny_basic::char_stream::AsciiCharStream;
 use crate::tiny_basic::types;
 
 #[derive(Debug)]
 pub struct Error<'ctx> {
-    line_number: Option<types::Number>,
+    line_number: Option<types::LineIndex>,
     context: OnceCell<&'ctx AsciiStr>,
     location: OnceCell<usize>,
     kind: ErrorKind
 }
 
 impl<'ctx> Error<'ctx> {
-    pub fn from_context(context: &AsciiCharStream<'ctx>, kind: ErrorKind, line_number: Option<types::Number>) -> Self {
+    pub fn from_context(context: &AsciiCharStream<'ctx>, kind: ErrorKind, line_number: Option<types::LineIndex>) -> Self {
         Self {
             line_number: line_number,
             context: OnceCell::from(context.get_stream()),
@@ -46,7 +46,7 @@ impl<'ctx> Error<'ctx> {
         self
     }
 
-    pub fn set_line_number(mut self, line_number: Option<types::Number>) -> Self {
+    pub fn set_line_number(mut self, line_number: Option<types::LineIndex>) -> Self {
         self.line_number = line_number;
         self
     }
@@ -76,6 +76,7 @@ impl<'ctx> std::fmt::Display for Error<'ctx> {
                 write!(f, "{} ", i)?;
                 // The length of the line number in digits 
                 // (which is its log10 + 1) and the space char
+                let i: types::Number = i.into();
                 i.checked_ilog10().expect("Line number should be greater than zero") + 1 + 1
             },
             None => 0,
@@ -109,7 +110,7 @@ impl<'ctx> std::fmt::Display for Error<'ctx> {
 #[cfg(test)]
 mod error_test {
     use ascii::AsAsciiStr;
-    use crate::tiny_basic::{char_stream::AsciiCharStream, error::ErrorKind};
+    use crate::tiny_basic::{char_stream::AsciiCharStream, error::ErrorKind, types};
 
     #[test]
     fn test_error_formatting_1() {
@@ -124,7 +125,7 @@ mod error_test {
         let mut ctx = AsciiCharStream::from_ascii_str("RETURN".as_ascii_str().unwrap());
         ctx.consume_keyword();
         let error = super::Error::from(ErrorKind::ReturnOnEmptyStack);
-        println!("{}", error.set_context(&ctx).set_line_number(Some(10)));
+        println!("{}", error.set_context(&ctx).set_line_number(Some(types::LineIndex::try_from(10).unwrap())));
     }
 
 
@@ -133,7 +134,7 @@ mod error_test {
         let mut ctx = AsciiCharStream::from_ascii_str("PRINT VAR".as_ascii_str().unwrap());
         ctx.consume_keyword();
         ctx.consume_var();
-        let error = super::Error::from_context(&ctx, super::ErrorKind::ExpectedKeyword, Some(123));
+        let error = super::Error::from_context(&ctx, super::ErrorKind::ExpectedKeyword, Some(types::LineIndex::try_from(123).unwrap()));
         println!("{}", error);
     }
 }
@@ -154,7 +155,8 @@ pub enum ErrorKind {
     ExecutionReachedEnd,
     ExpectedAsciiInput,
     ExpectedStatement,
-    ExpectedCommand
+    ExpectedCommand,
+    InvalidLineIndex
 }
 
 impl From<std::num::ParseIntError> for ErrorKind {
@@ -187,6 +189,7 @@ impl std::fmt::Display for ErrorKind {
             ErrorKind::ExpectedAsciiInput => write!(f, "All input is expected to be ASCII-only"),
             ErrorKind::ExpectedStatement => write!(f, "Expected statement"),
             ErrorKind::ExpectedCommand => write!(f, "Expected command"),
+            ErrorKind::InvalidLineIndex => write!(f, "Line index must be in range [{}; {}]", types::LineIndex::MIN, types::LineIndex::MAX),
         }
     }
 }

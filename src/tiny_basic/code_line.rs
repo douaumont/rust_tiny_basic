@@ -23,7 +23,7 @@ use crate::tiny_basic::char_stream::AsciiCharStream;
 use crate::tiny_basic::types;
 
 pub struct Line<'a> {
-    pub index: Option<types::Number>,
+    pub index: Option<types::LineIndex>,
     pub statement: &'a AsciiStr
 }
 
@@ -33,7 +33,11 @@ impl<'a> TryFrom<&'a AsciiStr> for Line<'a> {
     fn try_from(value: &'a AsciiStr) -> Result<Self, Self::Error> {
         let mut char_stream = AsciiCharStream::from_ascii_str(value);
         if let Some(line_index) = char_stream.consume_number() {
-            let line_index = line_index.as_str().parse::<types::Number>()?;
+            let line_index: types::LineIndex = line_index
+                .as_str()
+                .parse::<types::Number>()?
+                .try_into()?;
+
             Ok(Self{
                 index: Some(line_index),
                 statement: char_stream.flush()
@@ -50,6 +54,8 @@ impl<'a> TryFrom<&'a AsciiStr> for Line<'a> {
 #[cfg(test)]
 mod tests {
     use ascii::{AsciiString, AsAsciiStr};
+
+    use crate::tiny_basic::types::LineIndex;
 
     use super::Line;
 
@@ -68,7 +74,7 @@ mod tests {
         {
             let input = AsciiString::from_ascii(b"220 PRINT H").unwrap();
             let line = Line::try_from(input.as_ascii_str().unwrap()).unwrap();
-            assert_eq!(line.index, Some(220));
+            assert_eq!(line.index, Some(LineIndex::try_from(220).unwrap()));
             assert_eq!(line.statement.as_str(), "PRINT H");
         }
     }
@@ -78,7 +84,7 @@ mod tests {
         {
             let input = AsciiString::from_ascii(b"220").unwrap();
             let line = Line::try_from(input.as_ascii_str().unwrap()).unwrap();
-            assert_eq!(line.index, Some(220));
+            assert_eq!(line.index, Some(LineIndex::try_from(220).unwrap()));
             assert!(line.statement.is_empty());
         }
     }

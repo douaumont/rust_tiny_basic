@@ -16,4 +16,38 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+use crate::tiny_basic;
+
 pub type Number = i16;
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub struct LineIndex(Number);
+
+impl LineIndex {
+    pub const MIN: Number = 1;
+    pub const MAX: Number = Number::MAX;
+}
+
+impl TryFrom<Number> for LineIndex {
+    type Error = tiny_basic::error::ErrorKind;
+
+    fn try_from(value: Number) -> Result<Self, Self::Error> {
+        (Self::MIN..=Self::MAX)
+            .contains(&value)
+            .then_some(LineIndex(value))
+            .ok_or(tiny_basic::error::ErrorKind::InvalidLineIndex)
+    }
+}
+
+impl Into<Number> for LineIndex {
+    fn into(self) -> Number {
+        let LineIndex(i) = self;
+        i 
+    }
+}
+
+impl std::fmt::Display for LineIndex {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", Into::<Number>::into(*self))
+    }
+}
